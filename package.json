@@ -1,0 +1,14 @@
+{
+  "name": "macdraw",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "jsdom": "^29.0.1",
+    "vitest": "^3.1.1"
+  }
+}
