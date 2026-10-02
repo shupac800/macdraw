@@ -116,5 +116,29 @@ check('Ungroup then immediately drag the box: text stays in place, pixel for pix
   assert(app.selection.count === 1 && app.selection.has(box.id), 'box and text remained jointly selected');
   unchanged(); actions.undo(); unchanged(); actions.redo(); unchanged();
 });
+check('marquee-select a group and other objects, then drag the group: all pixels move together', () => {
+  const canvas = document.createElement('canvas'); canvas.width = 360; canvas.height = 150;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const doc = new Document(), selection = new Selection(), commandStack = new CommandStack();
+  Document.setShapeModule({ getBounds, hitTest });
+  const box = createShape('rect', { x: 16, y: 16, width: 100, height: 60, groupId: 'labelled-box' });
+  const text = createShape('text', { x: 32, y: 32, width: 70, height: 24, text: 'Label', fontFamily: 'Chicago', groupId: 'labelled-box' });
+  const other = createShape('rect', { x: 200, y: 16, width: 100, height: 60 });
+  const line = createShape('line', { x: 116, y: 46, width: 84, height: 0, points: [{ x: 116, y: 46 }, { x: 200, y: 46 }] });
+  [box, text, other, line].forEach(s => doc.addObject(s)); doc.addGroup({ id: 'labelled-box', members: [box.id, text.id] });
+  const pixels = (x = 0, y = 0) => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); doc.objects.forEach(s => renderShape(ctx, s)); return ctx.getImageData(x, y, 330, 100).data; };
+  const before = new Uint8ClampedArray(pixels());
+  const tool = new SelectTool(); Object.assign(tool, { doc, selection, commandStack, manager: { zoom: 1 }, overlay: { showRotationHandle: false } });
+  const mods = { shiftKey: false };
+  tool.onMouseDown({ x: 0, y: 0 }, mods); tool.onMouseUp({ x: 330, y: 100 }, mods);
+  assert(selection.count === 4, 'marquee did not select all objects');
+  tool.onMouseDown({ x: 50, y: 65 }, mods); tool.onMouseMove({ x: 60, y: 80 }, mods); tool.onMouseUp({ x: 70, y: 95 }, mods);
+  assert(selection.count === 4, 'drag collapsed the multi-selection');
+  assert(pixels(20, 30).every((v, i) => v === before[i]), 'some selected pixels stayed behind');
+  commandStack.undo(); assert(pixels().every((v, i) => v === before[i]), 'undo did not restore all objects');
+  commandStack.redo(); assert(pixels(20, 30).every((v, i) => v === before[i]), 'redo did not move all objects');
+  document.getElementById('samples').append(canvas);
+});
+
 document.getElementById('summary').textContent = `${passed} passed; ${failed} failed. Raw 50% fill: equal black/white pixels, zero gray pixels, exact checkerboard parity.`;
 document.getElementById('summary').dataset.failures = failed;

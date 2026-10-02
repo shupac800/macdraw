@@ -81,10 +81,12 @@ export class SelectTool {
         this.selection.selectMultiple(members.map(m => m.id));
       }
 
-      // If shape is in a group, select all group members
+      // Expand a partial group selection without throwing away other selected
+      // objects. A click on any selected member must drag the entire selection.
       if (clickedShape.groupId && !modifiers.shiftKey) {
-        const members = this.doc.getGroupMembers(clickedShape.groupId);
-        this.selection.selectMultiple(members.map(m => m.id));
+        for (const member of members) {
+          if (!this.selection.has(member.id)) this.selection.add(member.id);
+        }
       }
 
       this._dragging = true;
