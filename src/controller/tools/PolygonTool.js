@@ -23,6 +23,7 @@ export class PolygonTool {
   }
 
   onMouseDown(point) {
+    this.selection.clear();
     if (this._points.length > 0) {
       // Close polygon if clicking near first point
       if (distance(point, this._points[0]) < 10) {
@@ -30,7 +31,7 @@ export class PolygonTool {
         return;
       }
     }
-    this._points.push({ ...point });
+    if (!this._points.length || distance(point, this._points[this._points.length - 1]) > 0.5) this._points.push({ ...point });
     this._updatePreview(point);
   }
 
@@ -42,7 +43,7 @@ export class PolygonTool {
 
   onDoubleClick(point) {
     if (this._points.length >= 2) {
-      this._finish(true);
+      this._finish(false);
     }
   }
 
@@ -78,6 +79,8 @@ export class PolygonTool {
       points: this._points.map(p => ({ ...p })),
       closed,
       ...bounds,
+      stroke: { ...this.doc._defaultStroke },
+      fill: { type: 'none', color: '#fff', patternId: null },
     });
 
     this.commandStack.execute(new AddShapeCommand(this.doc, shape));

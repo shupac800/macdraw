@@ -40,8 +40,8 @@ export class RectTool {
     // Shift for square
     if (modifiers?.shiftKey) {
       const size = Math.max(Math.abs(width), Math.abs(height));
-      width = Math.sign(width) * size;
-      height = Math.sign(height) * size;
+      width = (Math.sign(width) || 1) * size;
+      height = (Math.sign(height) || 1) * size;
     }
 
     const rect = normalizeRect(this._startPoint.x, this._startPoint.y, width, height);
@@ -61,8 +61,8 @@ export class RectTool {
 
     if (modifiers?.shiftKey) {
       const size = Math.max(Math.abs(width), Math.abs(height));
-      width = Math.sign(width) * size;
-      height = Math.sign(height) * size;
+      width = (Math.sign(width) || 1) * size;
+      height = (Math.sign(height) || 1) * size;
     }
 
     const rect = normalizeRect(this._startPoint.x, this._startPoint.y, width, height);

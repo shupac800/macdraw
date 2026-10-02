@@ -1,5 +1,3 @@
-import { RULER_SIZE } from '../util/constants.js';
-
 export class InputHandler {
   constructor(canvas, toolManager, rulerRenderer) {
     this.canvas = canvas;
@@ -11,9 +9,11 @@ export class InputHandler {
 
   _getDocPoint(e) {
     const rect = this.canvas.getBoundingClientRect();
+    const screenScale = rect.width / this.canvas.clientWidth || 1;
+    const viewport = this.canvas.closest('#canvas-container');
     return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: ((e.clientX - rect.left) / screenScale + (viewport?.scrollLeft || 0)) / (this.toolManager.zoom || 1),
+      y: ((e.clientY - rect.top) / screenScale + (viewport?.scrollTop || 0)) / (this.toolManager.zoom || 1),
     };
   }
 
@@ -24,9 +24,10 @@ export class InputHandler {
       el.addEventListener(event, bound);
     };
 
-    on(this.canvas, 'mousedown', this._onMouseDown);
-    on(this.canvas, 'mousemove', this._onMouseMove);
-    on(this.canvas, 'mouseup', this._onMouseUp);
+    on(this.canvas, 'pointerdown', this._onMouseDown);
+    on(this.canvas, 'pointermove', this._onMouseMove);
+    on(this.canvas, 'pointerup', this._onMouseUp);
+    on(this.canvas, 'pointercancel', () => { this.toolManager._activeTool?.cancel?.(); this.toolManager._activeTool?.deactivate?.(); this.toolManager.doc._notify('preview'); });
     on(this.canvas, 'dblclick', this._onDoubleClick);
     on(window, 'keydown', this._onKeyDown);
     on(window, 'keyup', this._onKeyUp);
@@ -36,7 +37,12 @@ export class InputHandler {
   }
 
   _onMouseDown(e) {
-    const point = this._getDocPoint(e);
+    if (e.button !== 0) return;
+    const raw = this._getDocPoint(e), doc = this.toolManager.doc;
+    if (raw.x < 0 || raw.y < 0 || raw.x > doc.pageWidth || raw.y > doc.pageHeight) return;
+    this.canvas.focus({ preventScroll: true });
+    this.canvas.setPointerCapture(e.pointerId);
+    const point = this._snap(raw);
     this.toolManager.onMouseDown(point, {
       shiftKey: e.shiftKey,
       ctrlKey: e.ctrlKey || e.metaKey,
@@ -47,7 +53,7 @@ export class InputHandler {
 
   _onMouseMove(e) {
     const point = this._getDocPoint(e);
-    this.toolManager.onMouseMove(point, {
+    this.toolManager.onMouseMove(this.toolManager.getActiveTool() === 'select' ? point : this._snap(point), {
       shiftKey: e.shiftKey,
       ctrlKey: e.ctrlKey || e.metaKey,
       altKey: e.altKey,
@@ -62,13 +68,16 @@ export class InputHandler {
   }
 
   _onMouseUp(e) {
-    const point = this._getDocPoint(e);
+    if (e.button !== 0) return;
+    const raw = this._getDocPoint(e);
+    const point = this.toolManager.getActiveTool() === 'select' ? raw : this._snap(raw);
     this.toolManager.onMouseUp(point, {
       shiftKey: e.shiftKey,
       ctrlKey: e.ctrlKey || e.metaKey,
       altKey: e.altKey,
       button: e.button,
     });
+    if (this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
   }
 
   _onDoubleClick(e) {
@@ -81,11 +90,20 @@ export class InputHandler {
   }
 
   _onKeyDown(e) {
+    if (e.target.matches('input, textarea, select, [contenteditable], dialog *')) return;
     this.toolManager.onKeyDown(e);
   }
 
   _onKeyUp(e) {
+    if (e.target.matches('input, textarea, select, [contenteditable], dialog *')) return;
     this.toolManager.onKeyUp(e);
+  }
+
+  _snap(point) {
+    const doc = this.toolManager.doc;
+    if (this.toolManager.getActiveTool() === 'select') return point;
+    if (doc.snapToGrid && this.toolManager.getActiveTool() !== 'freehand') point = { x: Math.round(point.x / doc.gridSize) * doc.gridSize, y: Math.round(point.y / doc.gridSize) * doc.gridSize };
+    return { x: Math.max(0, Math.min(doc.pageWidth, point.x)), y: Math.max(0, Math.min(doc.pageHeight, point.y)) };
   }
 
   destroy() {

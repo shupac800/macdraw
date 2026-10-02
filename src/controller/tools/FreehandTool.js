@@ -40,7 +40,7 @@ export class FreehandTool {
     if (!this._drawing) return;
     this._drawing = false;
     if (this.overlay) this.overlay.interactionPreview = null;
-
+    if (this._points.at(-1)?.x !== point.x || this._points.at(-1)?.y !== point.y) this._points.push({ ...point });
     if (this._points.length < 3) return;
 
     const simplified = simplifyPoints(this._points, 2);
@@ -48,8 +48,10 @@ export class FreehandTool {
 
     const shape = createShape('freehand', {
       points: simplified,
-      closed: false,
+      closed: true,
       ...bounds,
+      stroke: { ...this.doc._defaultStroke },
+      fill: { type: 'none', color: '#fff', patternId: null },
     });
 
     this.commandStack.execute(new AddShapeCommand(this.doc, shape));

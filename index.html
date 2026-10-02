@@ -4,22 +4,36 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MacDraw</title>
+  <link rel="preload" href="assets/fonts/ChicagoKare-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
   <div id="app">
     <div id="menubar"></div>
-    <div id="main">
-      <div id="toolbar"></div>
-      <div id="canvas-area">
-        <canvas id="h-ruler"></canvas>
-        <canvas id="v-ruler"></canvas>
-        <div id="canvas-container">
-          <canvas id="drawing-canvas"></canvas>
+    <section id="document-window" aria-label="Drawing window">
+      <div id="titlebar">
+        <button id="close-box" aria-label="Close drawing" title="Close drawing"></button>
+        <span id="document-title">Untitled</span>
+        <button id="zoom-box" aria-label="Fit window" title="Fit window"></button>
+      </div>
+      <div id="main">
+        <div id="toolbar"></div>
+        <div id="canvas-area">
+          <div id="ruler-corner" aria-hidden="true"></div>
+          <canvas id="h-ruler"></canvas>
+          <canvas id="v-ruler"></canvas>
+          <div id="canvas-container">
+            <div id="canvas-surface"><canvas id="drawing-canvas" tabindex="0" aria-label="Drawing canvas"></canvas></div>
+          </div>
         </div>
       </div>
-      <div id="property-panel"></div>
-    </div>
+      <div id="statusbar">
+        <button id="style-preview" aria-label="Current fill and pen" title="Current fill and pen"></button>
+        <span id="status-text" role="status">Select an object, or choose a drawing tool.</span>
+        <button id="zoom-level" title="Set drawing scale" aria-label="Drawing scale">100%</button>
+        <span class="size-box" aria-hidden="true"></span>
+      </div>
+    </section>
   </div>
   <script type="module" src="src/app.js"></script>
 </body>

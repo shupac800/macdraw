@@ -3,7 +3,8 @@ import { AddShapeCommand } from '../../commands/AddShapeCommand.js';
 import { TOOLS } from '../../util/constants.js';
 
 export class LineTool {
-  constructor() {
+  constructor(perpendicular = false) {
+    this.perpendicular = perpendicular;
     this.manager = null;
     this.doc = null;
     this.selection = null;
@@ -28,9 +29,7 @@ export class LineTool {
     let endPoint = { ...point };
 
     // Shift constrains to 45-degree angles
-    if (modifiers?.shiftKey) {
-      endPoint = this._constrainAngle(this._startPoint, endPoint);
-    }
+    endPoint = this._endPoint(endPoint, modifiers);
 
     if (this.overlay) {
       this.overlay.interactionPreview = {
@@ -47,9 +46,7 @@ export class LineTool {
     if (this.overlay) this.overlay.interactionPreview = null;
 
     let endPoint = { ...point };
-    if (modifiers?.shiftKey) {
-      endPoint = this._constrainAngle(this._startPoint, endPoint);
-    }
+    endPoint = this._endPoint(endPoint, modifiers);
 
     const dx = endPoint.x - this._startPoint.x;
     const dy = endPoint.y - this._startPoint.y;
@@ -61,6 +58,9 @@ export class LineTool {
       y: Math.min(this._startPoint.y, endPoint.y),
       width: Math.abs(dx),
       height: Math.abs(dy),
+      stroke: { ...this.doc._defaultStroke },
+      startArrow: this.doc._startArrow || 'none',
+      endArrow: this.doc._endArrow || 'none',
     });
 
     this.commandStack.execute(new AddShapeCommand(this.doc, shape));
@@ -78,5 +78,13 @@ export class LineTool {
       x: start.x + len * Math.cos(snapped),
       y: start.y + len * Math.sin(snapped),
     };
+  }
+
+  _endPoint(end, modifiers) {
+    if (this.perpendicular) {
+      const start = this._startPoint;
+      return Math.abs(end.x - start.x) >= Math.abs(end.y - start.y) ? { x: end.x, y: start.y } : { x: start.x, y: end.y };
+    }
+    return modifiers?.shiftKey ? this._constrainAngle(this._startPoint, end) : end;
   }
 }

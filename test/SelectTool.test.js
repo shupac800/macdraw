@@ -270,8 +270,9 @@ describe('SelectTool', () => {
 
       // Select both (click one member of group)
       const mods = { shiftKey: false, ctrlKey: false, altKey: false };
-      tool.onMouseDown({ x: 25, y: 25 }, mods);
-      tool.onMouseUp({ x: 25, y: 25 }, mods);
+      // Unfilled polygons are selected by their border, as in MacDraw.
+      tool.onMouseDown({ x: 25, y: 0 }, mods);
+      tool.onMouseUp({ x: 25, y: 0 }, mods);
       expect(selection.count).toBe(2);
 
       // Unified bounds: (0,0,100,50), center at (50,25)

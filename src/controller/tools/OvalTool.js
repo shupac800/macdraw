@@ -30,7 +30,7 @@ export class OvalTool {
     let h = point.y - this._startPoint.y;
     if (modifiers?.shiftKey) {
       const s = Math.max(Math.abs(w), Math.abs(h));
-      w = Math.sign(w) * s; h = Math.sign(h) * s;
+      w = (Math.sign(w) || 1) * s; h = (Math.sign(h) || 1) * s;
     }
     const rect = normalizeRect(this._startPoint.x, this._startPoint.y, w, h);
     if (this.overlay) this.overlay.interactionPreview = { type: 'oval', ...rect };
@@ -45,12 +45,12 @@ export class OvalTool {
     let h = point.y - this._startPoint.y;
     if (modifiers?.shiftKey) {
       const s = Math.max(Math.abs(w), Math.abs(h));
-      w = Math.sign(w) * s; h = Math.sign(h) * s;
+      w = (Math.sign(w) || 1) * s; h = (Math.sign(h) || 1) * s;
     }
     const rect = normalizeRect(this._startPoint.x, this._startPoint.y, w, h);
     if (rect.width < MIN_SHAPE_SIZE && rect.height < MIN_SHAPE_SIZE) return;
 
-    const shape = createShape('oval', rect);
+    const shape = createShape('oval', { ...rect, stroke: { ...this.doc._defaultStroke }, fill: { ...this.doc._defaultFill } });
     this.commandStack.execute(new AddShapeCommand(this.doc, shape));
     this.selection.select(shape.id);
     this.manager.setActiveTool(TOOLS.SELECT);

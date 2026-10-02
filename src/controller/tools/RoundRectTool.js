@@ -50,7 +50,7 @@ export class RoundRectTool {
     const rect = normalizeRect(this._startPoint.x, this._startPoint.y, w, h);
     if (rect.width < MIN_SHAPE_SIZE && rect.height < MIN_SHAPE_SIZE) return;
 
-    const shape = createShape('roundRect', rect);
+    const shape = createShape('roundRect', { ...rect, cornerRadius: this.doc._cornerRadius ?? 18, stroke: { ...this.doc._defaultStroke }, fill: { ...this.doc._defaultFill } });
     this.commandStack.execute(new AddShapeCommand(this.doc, shape));
     this.selection.select(shape.id);
     this.manager.setActiveTool(TOOLS.SELECT);

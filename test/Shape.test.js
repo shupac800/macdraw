@@ -12,7 +12,8 @@ describe('createShape', () => {
     expect(shape.id).toMatch(/^shape_/);
     expect(shape.x).toBe(0);
     expect(shape.stroke.color).toBe('#000000');
-    expect(shape.fill.type).toBe('none');
+    expect(shape.fill.type).toBe('solid');
+    expect(shape.fill.color).toBe('#ffffff');
   });
 
   it('creates rect with overrides', () => {
@@ -54,15 +55,15 @@ describe('createShape', () => {
 
   it('creates roundRect with cornerRadius', () => {
     const shape = createShape('roundRect');
-    expect(shape.cornerRadius).toBe(12);
+    expect(shape.cornerRadius).toBe(18);
   });
 
   it('creates text with defaults', () => {
     const shape = createShape('text');
     expect(shape.text).toBe('');
-    expect(shape.fontFamily).toMatch(/Helvetica/);
-    expect(shape.fontSize).toBe(14);
-    expect(shape.fill.type).toBe('solid');
+    expect(shape.fontFamily).toMatch(/Chicago/);
+    expect(shape.fontSize).toBe(12);
+    expect(shape.fill.type).toBe('none');
   });
 
   it('generates unique ids', () => {
@@ -205,13 +206,12 @@ describe('hitTest', () => {
     expect(hitTest(shape, { x: 50, y: 30 })).toBe(true);
   });
 
-  it('polygon closed without fill: hit inside', () => {
+  it('polygon closed without fill: interior clicks pass through', () => {
     const shape = createShape('polygon', {
       points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 50, y: 80 }],
       closed: true,
     });
-    // Should be selectable by clicking interior even with no fill
-    expect(hitTest(shape, { x: 50, y: 30 })).toBe(true);
+    expect(hitTest(shape, { x: 50, y: 30 })).toBe(false);
   });
 
   it('polygon closed: hit on edge', () => {
