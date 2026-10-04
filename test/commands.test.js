@@ -197,7 +197,7 @@ describe('Commands', () => {
       expect(shape.fontSize).toBe(24);
 
       cmd.undo();
-      expect(shape.fontSize).toBe(14); // default
+      expect(shape.fontSize).toBe(12); // classic Chicago default
     });
 
     it('changes nested property', () => {

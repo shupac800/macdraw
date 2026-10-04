@@ -1,5 +1,5 @@
 import { HANDLE_SIZE, ROTATION_HANDLE_DISTANCE } from '../util/constants.js';
-import { getBounds, getMultiBounds } from '../model/Shape.js';
+import { getVisualBounds as getBounds, getMultiBounds, renderShape } from '../model/Shape.js';
 import { getHandlePositions } from '../util/geometry.js';
 
 export class SelectionOverlay {
@@ -8,6 +8,8 @@ export class SelectionOverlay {
     this.selection = selection;
     this.marquee = null; // {x, y, width, height} during marquee select
     this.interactionPreview = null; // preview shape during drawing
+    this.showRotationHandle = true;
+    this.zoom = 1;
   }
 
   render(ctx) {
@@ -37,7 +39,7 @@ export class SelectionOverlay {
    */
   _renderMemberOutline(ctx, bounds) {
     ctx.save();
-    ctx.strokeStyle = '#90CAF9';
+    ctx.strokeStyle = '#000';
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.strokeRect(bounds.x - 0.5, bounds.y - 0.5, bounds.width + 1, bounds.height + 1);
@@ -50,24 +52,25 @@ export class SelectionOverlay {
   _renderSelectionBox(ctx, bounds) {
     ctx.save();
 
-    // Blue selection outline
-    ctx.strokeStyle = '#2196F3';
-    ctx.lineWidth = 1;
+    // Black square handles, as on the monochrome Macintosh.
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1 / this.zoom;
     ctx.setLineDash([]);
-    ctx.strokeRect(bounds.x - 0.5, bounds.y - 0.5, bounds.width + 1, bounds.height + 1);
 
     // Resize handles
     const handles = getHandlePositions(bounds);
-    const half = HANDLE_SIZE / 2;
+    const size = HANDLE_SIZE / this.zoom;
+    const half = size / 2;
 
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#2196F3';
+    ctx.fillStyle = '#000';
+    ctx.strokeStyle = '#000';
     ctx.lineWidth = 1.5;
 
     for (const pos of Object.values(handles)) {
-      ctx.fillRect(pos.x - half, pos.y - half, HANDLE_SIZE, HANDLE_SIZE);
-      ctx.strokeRect(pos.x - half, pos.y - half, HANDLE_SIZE, HANDLE_SIZE);
+      ctx.fillRect(pos.x - half, pos.y - half, size, size);
     }
+
+    if (!this.showRotationHandle) { ctx.restore(); return; }
 
     // Rotation handle
     const topCenter = handles.n;
@@ -76,7 +79,7 @@ export class SelectionOverlay {
     ctx.beginPath();
     ctx.moveTo(topCenter.x, topCenter.y);
     ctx.lineTo(topCenter.x, rotY);
-    ctx.strokeStyle = '#2196F3';
+    ctx.strokeStyle = '#000';
     ctx.lineWidth = 1;
     ctx.stroke();
 
@@ -84,7 +87,7 @@ export class SelectionOverlay {
     ctx.arc(topCenter.x, rotY, 5, 0, Math.PI * 2);
     ctx.fillStyle = '#ffffff';
     ctx.fill();
-    ctx.strokeStyle = '#2196F3';
+    ctx.strokeStyle = '#000';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
@@ -93,22 +96,25 @@ export class SelectionOverlay {
 
   _renderMarquee(ctx) {
     ctx.save();
-    ctx.strokeStyle = '#2196F3';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1 / this.zoom;
     ctx.setLineDash([4, 4]);
-    ctx.fillStyle = 'rgba(33, 150, 243, 0.08)';
-    ctx.fillRect(this.marquee.x, this.marquee.y, this.marquee.width, this.marquee.height);
     ctx.strokeRect(this.marquee.x, this.marquee.y, this.marquee.width, this.marquee.height);
     ctx.restore();
   }
 
   _renderPreview(ctx) {
     ctx.save();
-    ctx.strokeStyle = '#2196F3';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1 / this.zoom;
     ctx.setLineDash([4, 4]);
 
     const p = this.interactionPreview;
+    if (p.type !== 'text') {
+      const shape = { ...p, rotation: 0, stroke: { color: '#000', width: 1 / this.zoom, cap: 'butt', join: 'miter', dash: [] }, fill: { type: 'none' }, cornerRadius: 18, startAngle: Math.PI, endAngle: Math.PI * 1.5 };
+      renderShape(ctx, shape);
+      ctx.restore(); return;
+    }
     if (p.type === 'rect' || p.type === 'roundRect' || p.type === 'oval' || p.type === 'arc' || p.type === 'text') {
       ctx.strokeRect(p.x, p.y, p.width, p.height);
     } else if (p.type === 'line') {

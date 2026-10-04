@@ -1,259 +1,73 @@
-/**
- * Procedural fill patterns — ~36 MacDraw-style patterns
- * Each pattern is drawn on a tiny offscreen canvas and converted to a CanvasPattern.
- */
-
-const PATTERN_SIZE = 8;
-
-const PATTERN_DEFS = [
-  // 0: solid black
-  (ctx) => { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 8, 8); },
-  // 1: solid white (effectively "none" in some contexts but included for completeness)
-  (ctx) => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 8, 8); },
-  // 2: 50% checkerboard
-  (ctx) => {
-    ctx.fillStyle = '#000';
-    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
-      if ((x + y) % 2 === 0) ctx.fillRect(x, y, 1, 1);
-    }
-  },
-  // 3: 25% dots
-  (ctx) => {
-    ctx.fillStyle = '#000';
-    for (let y = 0; y < 8; y += 2) for (let x = 0; x < 8; x += 4) {
-      ctx.fillRect(x + (y % 4 === 0 ? 0 : 2), y, 1, 1);
-    }
-  },
-  // 4: 75% fill
-  (ctx) => {
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 8, 8);
-    ctx.fillStyle = '#fff';
-    for (let y = 0; y < 8; y += 2) for (let x = 0; x < 8; x += 4) {
-      ctx.fillRect(x + (y % 4 === 0 ? 0 : 2), y, 1, 1);
-    }
-  },
-  // 5: horizontal lines
-  (ctx) => { ctx.fillStyle = '#000'; for (let y = 0; y < 8; y += 2) ctx.fillRect(0, y, 8, 1); },
-  // 6: vertical lines
-  (ctx) => { ctx.fillStyle = '#000'; for (let x = 0; x < 8; x += 2) ctx.fillRect(x, 0, 1, 8); },
-  // 7: diagonal lines (forward)
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, 8); ctx.lineTo(8, 0);
-    ctx.moveTo(-2, 2); ctx.lineTo(2, -2);
-    ctx.moveTo(6, 10); ctx.lineTo(10, 6);
-    ctx.stroke();
-  },
-  // 8: diagonal lines (back)
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, 0); ctx.lineTo(8, 8);
-    ctx.moveTo(-2, 6); ctx.lineTo(2, 10);
-    ctx.moveTo(6, -2); ctx.lineTo(10, 2);
-    ctx.stroke();
-  },
-  // 9: crosshatch
-  (ctx) => {
-    ctx.fillStyle = '#000';
-    for (let y = 0; y < 8; y += 4) ctx.fillRect(0, y, 8, 1);
-    for (let x = 0; x < 8; x += 4) ctx.fillRect(x, 0, 1, 8);
-  },
-  // 10: diagonal crosshatch
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, 0); ctx.lineTo(8, 8);
-    ctx.moveTo(0, 8); ctx.lineTo(8, 0);
-    ctx.stroke();
-  },
-  // 11: fine horizontal lines
-  (ctx) => { ctx.fillStyle = '#000'; for (let y = 0; y < 8; y += 4) ctx.fillRect(0, y, 8, 1); },
-  // 12: fine vertical lines
-  (ctx) => { ctx.fillStyle = '#000'; for (let x = 0; x < 8; x += 4) ctx.fillRect(x, 0, 1, 8); },
-  // 13: dots sparse
-  (ctx) => { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 1, 1); },
-  // 14: dots dense
-  (ctx) => {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, 1, 1);
-    ctx.fillRect(4, 4, 1, 1);
-  },
-  // 15: bricks
-  (ctx) => {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, 8, 1);
-    ctx.fillRect(0, 4, 8, 1);
-    ctx.fillRect(0, 0, 1, 4);
-    ctx.fillRect(4, 4, 1, 4);
-  },
-  // 16: horizontal dashes
-  (ctx) => {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, 4, 1);
-    ctx.fillRect(4, 4, 4, 1);
-  },
-  // 17: vertical dashes
-  (ctx) => {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, 1, 4);
-    ctx.fillRect(4, 4, 1, 4);
-  },
-  // 18: herringbone
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, 4); ctx.lineTo(4, 0); ctx.lineTo(8, 4);
-    ctx.moveTo(0, 8); ctx.lineTo(4, 4); ctx.lineTo(8, 8);
-    ctx.stroke();
-  },
-  // 19: wave
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, 4);
-    ctx.quadraticCurveTo(2, 0, 4, 4);
-    ctx.quadraticCurveTo(6, 8, 8, 4);
-    ctx.stroke();
-  },
-  // 20: triangles
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(4, 0); ctx.lineTo(8, 8); ctx.lineTo(0, 8); ctx.closePath();
-    ctx.stroke();
-  },
-  // 21: 12.5% dots
-  (ctx) => {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, 1, 1);
-    ctx.fillRect(4, 4, 1, 1);
-  },
-  // 22: hex pattern
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(2, 0); ctx.lineTo(6, 0); ctx.lineTo(8, 4);
-    ctx.lineTo(6, 8); ctx.lineTo(2, 8); ctx.lineTo(0, 4); ctx.closePath();
-    ctx.stroke();
-  },
-  // 23: thick horizontal
-  (ctx) => { ctx.fillStyle = '#000'; for (let y = 0; y < 8; y += 4) ctx.fillRect(0, y, 8, 2); },
-  // 24: thick vertical
-  (ctx) => { ctx.fillStyle = '#000'; for (let x = 0; x < 8; x += 4) ctx.fillRect(x, 0, 2, 8); },
-  // 25: thick diagonal forward
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-1, 9); ctx.lineTo(9, -1);
-    ctx.stroke();
-  },
-  // 26: thick diagonal back
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-1, -1); ctx.lineTo(9, 9);
-    ctx.stroke();
-  },
-  // 27: confetti
-  (ctx) => {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(1, 1, 2, 1);
-    ctx.fillRect(5, 3, 1, 2);
-    ctx.fillRect(3, 6, 2, 1);
-    ctx.fillRect(7, 7, 1, 1);
-  },
-  // 28: plus signs
-  (ctx) => {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(3, 1, 2, 1);
-    ctx.fillRect(3, 3, 2, 1);
-    ctx.fillRect(2, 2, 4, 1);
-  },
-  // 29: circles
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(4, 4, 3, 0, Math.PI * 2); ctx.stroke();
-  },
-  // 30: diamonds
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(4, 0); ctx.lineTo(8, 4); ctx.lineTo(4, 8); ctx.lineTo(0, 4); ctx.closePath();
-    ctx.stroke();
-  },
-  // 31: scales
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(4, 8, 4, Math.PI, 0);
-    ctx.arc(0, 4, 4, 0, -Math.PI / 2, true);
-    ctx.stroke();
-  },
-  // 32: dense diagonal
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    for (let i = -8; i < 16; i += 3) {
-      ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 8, 8); ctx.stroke();
-    }
-  },
-  // 33: zigzag
-  (ctx) => {
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, 2); ctx.lineTo(2, 0); ctx.lineTo(4, 2);
-    ctx.lineTo(6, 0); ctx.lineTo(8, 2);
-    ctx.moveTo(0, 6); ctx.lineTo(2, 4); ctx.lineTo(4, 6);
-    ctx.lineTo(6, 4); ctx.lineTo(8, 6);
-    ctx.stroke();
-  },
-  // 34: stipple light
-  (ctx) => {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(1, 0, 1, 1);
-    ctx.fillRect(5, 2, 1, 1);
-    ctx.fillRect(3, 4, 1, 1);
-    ctx.fillRect(7, 6, 1, 1);
-  },
-  // 35: stipple heavy
-  (ctx) => {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, 2, 1); ctx.fillRect(4, 2, 2, 1);
-    ctx.fillRect(2, 4, 2, 1); ctx.fillRect(6, 6, 2, 1);
-  },
+// Eight by eight, one-bit tiles. A zero bit is opaque white, never transparent.
+// IDs 0 and 1 remain black and white for compatibility with saved drawings.
+export const PATTERN_ROWS = [
+  [255,255,255,255,255,255,255,255], [0,0,0,0,0,0,0,0],
+  [170,85,170,85,170,85,170,85], [136,34,136,34,136,34,136,34],
+  [119,221,119,221,119,221,119,221], [255,0,255,0,255,0,255,0],
+  [170,170,170,170,170,170,170,170], [1,2,4,8,16,32,64,128],
+  [128,64,32,16,8,4,2,1], [255,136,136,136,255,136,136,136],
+  [129,66,36,24,24,36,66,129], [255,0,0,0,255,0,0,0],
+  [136,136,136,136,136,136,136,136], [128,0,0,0,0,0,0,0],
+  [128,0,0,0,8,0,0,0], [255,128,128,128,255,8,8,8],
+  [240,0,0,0,15,0,0,0], [128,128,128,128,8,8,8,8],
+  [17,34,68,136,136,68,34,17], [0,102,153,0,0,102,153,0],
+  [16,56,108,198,255,0,0,0], [136,0,34,0,136,0,34,0],
+  [60,66,129,129,129,129,66,60], [255,255,0,0,255,255,0,0],
+  [204,204,204,204,204,204,204,204], [3,6,12,24,48,96,192,129],
+  [192,96,48,24,12,6,3,129], [0,96,0,4,4,0,24,1],
+  [0,16,56,16,0,1,131,1], [60,66,129,129,129,129,66,60],
+  [16,40,68,130,1,130,68,40], [0,0,24,36,66,129,0,0],
+  [17,34,68,136,17,34,68,136], [85,170,0,0,85,170,0,0],
+  [128,0,8,0,32,0,2,0], [192,0,12,0,48,0,3,0],
+];
+export const PATTERN_NAMES = [
+  'Black', 'White', '50% gray', '25% gray', '75% gray', 'Horizontal lines',
+  'Vertical lines', 'Diagonal left', 'Diagonal right', 'Crosshatch', 'Diagonal crosshatch',
+  'Fine horizontal', 'Fine vertical', 'Sparse dots', 'Dots', 'Brick', 'Horizontal dashes',
+  'Vertical dashes', 'Herringbone', 'Waves', 'Triangles', 'Fine dots', 'Hexagons',
+  'Thick horizontal', 'Thick vertical', 'Thick diagonal left', 'Thick diagonal right',
+  'Confetti', 'Crosses', 'Circles', 'Diamonds', 'Scales', 'Dense diagonal', 'Zigzag',
+  'Light stipple', 'Heavy stipple',
 ];
 
+export function patternSVG(id) {
+  const rows = PATTERN_ROWS[id] || PATTERN_ROWS[0];
+  let pixels = '<rect width="8" height="8" fill="#fff"/>';
+  rows.forEach((row, y) => {
+    for (let x = 0; x < 8; x++) if (row & (128 >> x)) pixels += `<rect x="${x}" y="${y}" width="1" height="1" fill="#000"/>`;
+  });
+  return pixels;
+}
+
 export class PatternRegistry {
-  constructor() {
-    this._patterns = new Map();
-    this._canvasPatterns = new Map();
-  }
-
+  constructor() { this._patterns = new Map(); this._canvasPatterns = new Map(); }
   init(targetCtx) {
-    for (let i = 0; i < PATTERN_DEFS.length; i++) {
-      const offscreen = document.createElement('canvas');
-      offscreen.width = PATTERN_SIZE;
-      offscreen.height = PATTERN_SIZE;
-      const ctx = offscreen.getContext('2d');
-      ctx.clearRect(0, 0, PATTERN_SIZE, PATTERN_SIZE);
-      PATTERN_DEFS[i](ctx);
-      this._patterns.set(i, offscreen);
-
-      const pattern = targetCtx.createPattern(offscreen, 'repeat');
-      this._canvasPatterns.set(i, pattern);
-    }
+    PATTERN_ROWS.forEach((rows, id) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 8;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 8, 8);
+      ctx.fillStyle = '#000';
+      rows.forEach((row, y) => { for (let x = 0; x < 8; x++) if (row & (128 >> x)) ctx.fillRect(x, y, 1, 1); });
+      this._patterns.set(id, canvas);
+      this._canvasPatterns.set(id, targetCtx.createPattern(canvas, 'repeat'));
+    });
   }
-
-  getPattern(id) {
-    return this._canvasPatterns.get(id) || null;
+  getPattern(id) { return this._canvasPatterns.get(id) || null; }
+  strokeMask(width, height) {
+    this._strokeMask ||= document.createElement('canvas');
+    this._strokeMask.width = width; this._strokeMask.height = height;
+    return this._strokeMask;
   }
+  getPatternCanvas(id) { return this._patterns.get(id) || null; }
+  get count() { return PATTERN_ROWS.length; }
+}
 
-  getPatternCanvas(id) {
-    return this._patterns.get(id) || null;
+export function monochromePixels(imageData) {
+  const pixels = imageData.data;
+  for (let i = 0; i < pixels.length; i += 4) {
+    const value = pixels[i] < 128 ? 0 : 255;
+    pixels[i] = pixels[i + 1] = pixels[i + 2] = value; pixels[i + 3] = 255;
   }
-
-  get count() {
-    return PATTERN_DEFS.length;
-  }
+  return imageData;
 }

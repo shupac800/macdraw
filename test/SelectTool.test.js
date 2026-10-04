@@ -97,6 +97,58 @@ describe('SelectTool', () => {
     expect(selection.has(c.id)).toBe(false);
   });
 
+  it.each(['ungrouped shape', 'grouped box', 'grouped text'])('drags the entire marquee selection by its %s, with atomic undo/redo', target => {
+    overlay.showRotationHandle = false;
+    const box = createShape('rect', { x: 40, y: 40, width: 80, height: 60 });
+    const text = createShape('text', { x: 55, y: 50, width: 50, height: 20, text: 'Label' });
+    const oval = createShape('oval', { x: 190, y: 40, width: 60, height: 60 });
+    const line = createShape('line', { x: 60, y: 140, width: 160, height: 20, points: [{ x: 60, y: 140 }, { x: 220, y: 160 }] });
+    const outside = createShape('rect', { x: 400, y: 300, width: 30, height: 30 });
+    if (target !== 'ungrouped shape') {
+      box.groupId = text.groupId = 'labelled-box';
+      doc.addGroup({ id: 'labelled-box', members: [box.id, text.id] });
+    }
+    [box, text, oval, line, outside].forEach(s => doc.addObject(s));
+    const before = structuredClone(doc.objects), selectedIds = [box.id, text.id, oval.id, line.id];
+    const mods = { shiftKey: false, ctrlKey: false, altKey: false };
+    tool.onMouseDown({ x: 10, y: 10 }, mods);
+    tool.onMouseMove({ x: 280, y: 190 }, mods); tool.onMouseUp({ x: 280, y: 190 }, mods);
+    expect(selection.ids).toEqual(selectedIds);
+
+    const start = target === 'grouped text' ? { x: 75, y: 60 } : { x: 80, y: 85 };
+    tool.onMouseDown(start, mods);
+    expect(selection.ids).toEqual(selectedIds);
+    expect(tool._mode).toBe('move');
+    tool.onMouseMove({ x: start.x + 25, y: start.y + 17 }, mods);
+    for (const [i, shape] of [box, text, oval, line].entries()) {
+      expect(shape.x).toBe(before[i].x + 25); expect(shape.y).toBe(before[i].y + 17);
+    }
+    tool.onMouseUp({ x: start.x + 35, y: start.y + 25 }, mods);
+    const after = structuredClone(before);
+    for (const shape of after.slice(0, 4)) {
+      shape.x += 35; shape.y += 25;
+      if (shape.points) shape.points.forEach(p => { p.x += 35; p.y += 25; });
+    }
+    expect(doc.objects).toEqual(after); expect(selection.ids).toEqual(selectedIds);
+    commandStack.undo(); expect(doc.objects).toEqual(before);
+    expect(commandStack.canUndo).toBe(false);
+    commandStack.redo(); expect(doc.objects).toEqual(after);
+  });
+
+  it('cancels a marquee-selection move without displacing any selected objects', () => {
+    overlay.showRotationHandle = false;
+    const a = createShape('rect', { x: 20, y: 20, width: 60, height: 60 });
+    const b = createShape('rect', { x: 120, y: 20, width: 60, height: 60 });
+    const c = createShape('oval', { x: 220, y: 20, width: 60, height: 60 });
+    a.groupId = b.groupId = 'g'; doc.addGroup({ id: 'g', members: [a.id, b.id] });
+    [a, b, c].forEach(s => doc.addObject(s));
+    const before = structuredClone(doc.objects), mods = { shiftKey: false };
+    tool.onMouseDown({ x: 0, y: 0 }, mods); tool.onMouseUp({ x: 300, y: 100 }, mods);
+    tool.onMouseDown({ x: 50, y: 50 }, mods); tool.onMouseMove({ x: 100, y: 100 }, mods);
+    tool.deactivate();
+    expect(doc.objects).toEqual(before); expect(selection.count).toBe(3); expect(commandStack.canUndo).toBe(false);
+  });
+
   it('shift-click near a handle still adds to selection', () => {
     // Shape A's SE handle is at (60, 60). Shape B starts at (56, 56).
     // Without the fix, clicking shape B's interior near A's handle
@@ -270,8 +322,9 @@ describe('SelectTool', () => {
 
       // Select both (click one member of group)
       const mods = { shiftKey: false, ctrlKey: false, altKey: false };
-      tool.onMouseDown({ x: 25, y: 25 }, mods);
-      tool.onMouseUp({ x: 25, y: 25 }, mods);
+      // Unfilled polygons are selected by their border, as in MacDraw.
+      tool.onMouseDown({ x: 25, y: 0 }, mods);
+      tool.onMouseUp({ x: 25, y: 0 }, mods);
       expect(selection.count).toBe(2);
 
       // Unified bounds: (0,0,100,50), center at (50,25)

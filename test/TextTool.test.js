@@ -16,7 +16,7 @@ describe('TextTool editing', () => {
   let dom, doc, selection, stack, manager, tool, canvas;
 
   beforeEach(() => {
-    dom = new JSDOM('<!DOCTYPE html><canvas></canvas><button>Other tool</button>', { url: 'http://localhost' });
+    dom = new JSDOM('<!DOCTYPE html><canvas tabindex="0"></canvas><button>Other tool</button>', { url: 'http://localhost' });
     for (const name of ['window', 'document', 'DOMParser', 'XMLSerializer']) {
       vi.stubGlobal(name, dom.window[name]);
     }
@@ -28,6 +28,8 @@ describe('TextTool editing', () => {
     canvas = document.querySelector('canvas');
     canvas.getBoundingClientRect = () => ({ left: 50, top: 80 });
     canvas.getContext = () => ({ save() {}, restore() {}, measureText: text => ({ width: text.length * 10 }) });
+    canvas.setPointerCapture = vi.fn();
+    canvas.hasPointerCapture = () => false;
     manager = new ToolManager(doc, selection, stack, {}, { canvas, setText() {}, setDefault() {} });
     tool = new TextTool();
     manager.registerTool(TOOLS.TEXT, tool);
@@ -36,7 +38,7 @@ describe('TextTool editing', () => {
   });
 
   afterEach(() => {
-    tool._finishEditing(false);
+    tool.finishEditing(true);
     dom.window.close();
     vi.unstubAllGlobals();
   });
@@ -60,6 +62,9 @@ describe('TextTool editing', () => {
     return event;
   }
 
+  function finish(editor) { return key(editor, 'Enter', { ctrlKey: true }); }
+  function current(shape) { return doc.getObjectById(shape.id); }
+
   it('reopens the selected original with its text, styling and transform', () => {
     const shape = addText({ fontFamily: 'Courier New', fontSize: 20, fontWeight: 'bold',
       fontStyle: 'italic', textDecoration: 'underline', textAlign: 'right',
@@ -67,28 +72,28 @@ describe('TextTool editing', () => {
     const before = structuredClone(shape);
     const editor = edit(shape, 'Replacement');
     expect(document.activeElement).toBe(editor);
-    expect(editor.style.left).toBe('60px');
-    expect(editor.style.top).toBe('100px');
+    expect(editor.style.left).toBe('10px');
+    expect(editor.style.top).toBe('20px');
     expect(editor.style.fontFamily.replaceAll('"', '')).toBe('Courier New');
     expect(editor.style.fontWeight).toBe('bold');
     expect(editor.style.fontStyle).toBe('italic');
     expect(editor.style.textDecoration).toBe('underline');
     expect(editor.style.textAlign).toBe('right');
-    expect(editor.style.color).toBe('rgb(18, 52, 86)');
+    expect(editor.style.color).toBe('rgb(0, 0, 0)');
     expect(editor.style.transform).toContain('scale(-1, 1)');
     expect(editor.wrap).toBe('off');
     expect(shape).toEqual(before);
-    key(editor, 'Escape');
+    finish(editor);
     expect(doc.objects).toEqual([shape]);
-    expect(shape).toMatchObject({ ...before, text: 'Replacement', width: 114, height: 30 });
+    expect(shape).toMatchObject({ ...before, text: 'Replacement', width: 110, height: 26 });
     expect(selection.ids).toEqual([shape.id]);
   });
 
-  it('prefills existing text and puts the caret at the end', () => {
+  it('prefills and selects existing text like a newly entered text object', () => {
     const shape = addText({ text: 'First\nSecond' });
     manager.onMouseDown({ x: 30, y: 30 }, {});
     expect(tool._textarea.value).toBe(shape.text);
-    expect(tool._textarea.selectionStart).toBe(shape.text.length);
+    expect(tool._textarea.selectionStart).toBe(0);
     expect(tool._textarea.selectionEnd).toBe(shape.text.length);
     expect(stack.canUndo).toBe(false);
   });
@@ -96,7 +101,7 @@ describe('TextTool editing', () => {
   it('prevents default canvas focus from taking focus away from a reopened editor', () => {
     addText();
     new InputHandler(canvas, manager);
-    const event = new window.MouseEvent('mousedown', {
+    const event = new window.MouseEvent('pointerdown', {
       clientX: 80, clientY: 110, bubbles: true, cancelable: true,
     });
     canvas.dispatchEvent(event);
@@ -109,16 +114,16 @@ describe('TextTool editing', () => {
     const shape = addText();
     const editor = edit(shape, 'Blurred');
     document.querySelector('button').focus();
-    expect(shape.text).toBe('Blurred');
+    expect(current(shape).text).toBe('Blurred');
     expect(editor.isConnected).toBe(false);
     expect(tool._textarea).toBeNull();
     edit(shape, 'Switched');
     manager.setActiveTool(TOOLS.SELECT);
     expect(shape.text).toBe('Switched');
     stack.undo();
-    expect(shape.text).toBe('Blurred');
+    expect(current(shape).text).toBe('Blurred');
     stack.undo();
-    expect(shape.text).toBe('Original');
+    expect(current(shape).text).toBe('Original');
     expect(stack.canUndo).toBe(false);
   });
 
@@ -131,9 +136,12 @@ describe('TextTool editing', () => {
     expect(doc.objects).toHaveLength(1);
     manager.onMouseDown({ x: 300, y: 300 }, {});
     manager.onMouseUp({ x: 300, y: 300 }, {});
-    expect(doc.objects).toHaveLength(2);
+    expect(doc.objects).toHaveLength(1);
     expect(tool._textarea.value).toBe('');
-    expect(doc.objects[1]).toMatchObject({ x: 300, y: 300, width: 100, height: 24 });
+    expect(tool._editingShape).toMatchObject({ x: 300, y: 300, width: 160, height: 20 });
+    tool._textarea.value = 'Fresh';
+    finish(tool._textarea);
+    expect(doc.objects).toHaveLength(2);
   });
 
   it('clicking another text commits and opens that object in one click', () => {
@@ -151,43 +159,44 @@ describe('TextTool editing', () => {
     const shape = addText();
     const originalBounds = getBounds(shape);
     const observed = [];
-    doc.onChange(type => { if (type === 'editText') observed.push(getBounds(shape)); });
-    key(edit(shape, 'A much longer first line\nSecond\nThird'), 'Enter', { ctrlKey: true });
+    doc.onChange(type => { if (type === 'change') observed.push(getBounds(current(shape))); });
+    finish(edit(shape, 'A much longer first line\nSecond\nThird'));
     const firstBounds = getBounds(shape);
-    expect(firstBounds.width).toBe(244);
-    expect(firstBounds.height).toBe(59);
+    expect(firstBounds.width).toBe(240);
+    expect(firstBounds.height).toBeCloseTo(46.8);
     expect(observed).toEqual([firstBounds]);
     expect(doc.getObjectAtPoint({ x: 245, y: 65 })).toBe(shape);
     manager.setActiveTool(TOOLS.TEXT);
-    key(edit(shape, 'Again'), 'Escape');
+    finish(edit(shape, 'Again'));
     stack.undo();
-    expect(shape.text).toBe('A much longer first line\nSecond\nThird');
-    expect(getBounds(shape)).toEqual(firstBounds);
+    expect(current(shape).text).toBe('A much longer first line\nSecond\nThird');
+    expect(getBounds(current(shape))).toEqual(firstBounds);
     stack.undo();
-    expect(shape.text).toBe('Original');
-    expect(getBounds(shape)).toEqual(originalBounds);
+    expect(current(shape).text).toBe('Original');
+    expect(getBounds(current(shape))).toEqual(originalBounds);
     stack.redo();
     stack.redo();
-    expect(shape.text).toBe('Again');
-    expect(getBounds(shape)).toEqual(firstBounds);
-    expect(doc.objects).toEqual([shape]);
+    expect(current(shape).text).toBe('Again');
+    expect(current(shape)).toMatchObject({ x: 10, y: 20, width: 50 });
+    expect(current(shape).height).toBeCloseTo(15.6);
+    expect(doc.objects.map(s => s.id)).toEqual([shape.id]);
   });
 
-  it('keeps Enter multiline, ignores composing exit keys and preserves Escape finish', () => {
+  it('keeps Enter multiline, ignores composing exit keys and finishes with Ctrl+Enter', () => {
     const shape = addText();
     const editor = edit(shape, 'Line 1\nLine 2');
     expect(key(editor, 'Enter').defaultPrevented).toBe(false);
     expect(key(editor, 'Escape', { isComposing: true }).defaultPrevented).toBe(false);
     expect(tool._textarea).toBe(editor);
-    expect(key(editor, 'Escape').defaultPrevented).toBe(true);
+    expect(finish(editor).defaultPrevented).toBe(true);
     expect(shape.text).toBe('Line 1\nLine 2');
     expect(manager.getActiveTool()).toBe(TOOLS.SELECT);
   });
 
-  it('cancels a draft with Ctrl+Escape without changing text or bounds', () => {
+  it('cancels a draft with Escape without changing text or bounds', () => {
     const shape = addText();
     const before = structuredClone(shape);
-    key(edit(shape, 'Discard this\nand this'), 'Escape', { ctrlKey: true });
+    key(edit(shape, 'Discard this\nand this'), 'Escape');
     expect(shape).toEqual(before);
     expect(stack.canUndo).toBe(false);
     expect(tool._textarea).toBeNull();
@@ -195,21 +204,21 @@ describe('TextTool editing', () => {
 
   it('retains empty objects and original bounds, with Undo restoring their text', () => {
     const shape = addText();
-    key(edit(shape, ''), 'Escape');
+    finish(edit(shape, ''));
     expect(shape).toMatchObject({ text: '', width: 100, height: 24 });
     expect(doc.objects).toEqual([shape]);
     expect(doc.getObjectAtPoint({ x: 30, y: 30 })).toBe(shape);
     stack.undo();
-    expect(shape.text).toBe('Original');
+    expect(current(shape).text).toBe('Original');
     stack.redo();
     manager.setActiveTool(TOOLS.TEXT);
-    expect(edit(shape, 'Restored').isConnected).toBe(true);
+    expect(edit(current(shape), 'Restored').isConnected).toBe(true);
   });
 
   it('does not add an undo entry or resize when unchanged', () => {
     const shape = addText({ width: 30, height: 10 });
     const before = structuredClone(shape);
-    key(edit(shape, shape.text), 'Escape');
+    finish(edit(shape, shape.text));
     expect(stack.canUndo).toBe(false);
     expect(shape).toEqual(before);
   });
@@ -221,7 +230,7 @@ describe('TextTool editing', () => {
     manager.onMouseDown({ x: 30, y: 30 }, {});
     expect(tool._editingShape).toBe(top);
     expect(selection.ids).toEqual([top.id]);
-    tool._finishEditing(false);
+    tool.finishEditing(true);
     doc.addObject(createShape('rect', { x: 10, y: 20, width: 100, height: 24 }));
     manager.onMouseDown({ x: 30, y: 30 }, {});
     expect(tool._textarea).toBeNull();
@@ -242,7 +251,7 @@ describe('TextTool editing', () => {
     tool.startEditing(shape);
     expect(tool._textarea).toBe(editor);
     expect(document.querySelectorAll('textarea')).toHaveLength(1);
-    tool._finishEditing(false);
+    tool.finishEditing(true);
     tool.cursor = null;
     tool.startEditing(shape);
     expect(tool._editingShape).toBeNull();
@@ -255,6 +264,82 @@ describe('TextTool editing', () => {
     const replacement = addText({ id: shape.id, text: 'Loaded' });
     tool._finishEditing();
     expect(replacement.text).toBe('Loaded');
+    expect(stack.canUndo).toBe(false);
+  });
+
+  it('preserves pointer click-away without premature focus creating another draft', () => {
+    const shape = addText();
+    new InputHandler(canvas, manager);
+    edit(shape, 'Finished');
+    canvas.dispatchEvent(new window.MouseEvent('pointerdown', {
+      clientX: 350, clientY: 380, bubbles: true, cancelable: true,
+    }));
+    canvas.dispatchEvent(new window.MouseEvent('pointerup', {
+      clientX: 350, clientY: 380, bubbles: true, cancelable: true,
+    }));
+    expect(shape.text).toBe('Finished');
+    expect(tool._textarea).toBeNull();
+    expect(tool._drawing).toBe(false);
+    expect(doc.objects).toHaveLength(1);
+  });
+
+  it('edits grouped text without changing the group or sibling objects', () => {
+    const shape = addText({ groupId: 'group1', rotation: Math.PI / 4, flipV: true });
+    const sibling = createShape('rect', { x: 200, y: 200, width: 50, height: 50, groupId: 'group1' });
+    doc.addObject(sibling);
+    doc.addGroup({ id: 'group1', members: [shape.id, sibling.id] });
+    const before = structuredClone(doc.toJSON());
+    finish(edit(shape, 'Grouped change'));
+    expect(shape.groupId).toBe('group1');
+    expect(shape.rotation).toBe(Math.PI / 4);
+    expect(shape.flipV).toBe(true);
+    expect(sibling).toEqual(before.objects[1]);
+    expect(doc.groups).toEqual(before.groups);
+    stack.undo();
+    expect(doc.toJSON()).toEqual(before);
+    stack.redo();
+    expect(current(shape).text).toBe('Grouped change');
+    expect(doc.groups).toEqual(before.groups);
+  });
+
+  it.each([0.5, 2])('retains wrapping, line spacing and document coordinates at zoom %s', zoom => {
+    manager.zoom = zoom;
+    const shape = addText({ width: 40, wrap: true, lineSpacing: 2, outline: true, shadow: true });
+    const editor = edit(shape, 'abcd efgh\n\nlast');
+    expect(editor.wrap).toBe('soft');
+    expect(editor.style.left).toBe(`${10 * zoom}px`);
+    expect(editor.style.top).toBe(`${20 * zoom}px`);
+    expect(editor.style.fontSize).toBe(`${12 * zoom}px`);
+    expect(editor.style.width).toBe(`${40 * zoom}px`);
+    expect(editor.style.lineHeight).toBe('2.6');
+    expect(editor.style.textShadow).not.toBe('none');
+    finish(editor);
+    expect(shape).toMatchObject({ x: 10, y: 20, width: 40, wrap: true, lineSpacing: 2,
+      outline: true, shadow: true, text: 'abcd efgh\n\nlast' });
+    expect(shape.height).toBeCloseTo(109.2);
+  });
+
+  it('keeps locked text immutable without creating a duplicate', () => {
+    const shape = addText({ locked: true });
+    manager.onMouseDown({ x: 30, y: 30 }, {});
+    manager.onMouseUp({ x: 30, y: 30 }, {});
+    expect(tool._textarea).toBeNull();
+    expect(doc.objects).toEqual([shape]);
+    expect(stack.canUndo).toBe(false);
+  });
+
+  it('cancels new text and omits new empty drafts without an undo entry', () => {
+    manager.onMouseDown({ x: 200, y: 200 }, {});
+    manager.onMouseUp({ x: 200, y: 200 }, {});
+    tool._textarea.value = 'Canceled new text';
+    key(tool._textarea, 'Escape');
+    expect(doc.objects).toHaveLength(0);
+    expect(stack.canUndo).toBe(false);
+    manager.chooseTool(TOOLS.TEXT);
+    manager.onMouseDown({ x: 200, y: 200 }, {});
+    manager.onMouseUp({ x: 200, y: 200 }, {});
+    finish(tool._textarea);
+    expect(doc.objects).toHaveLength(0);
     expect(stack.canUndo).toBe(false);
   });
 
@@ -287,7 +372,7 @@ describe('TextTool editing', () => {
   it('preserves edited multiline text, identity, style, transform and bounds in JSON and SVG', () => {
     const shape = addText({ rotation: Math.PI / 2, flipV: true, fontWeight: 'bold',
       fontStyle: 'italic', textDecoration: 'underline', textAlign: 'center', fill: { color: '#123456' } });
-    key(edit(shape, 'Edited <text> & symbols\nSecond line'), 'Escape');
+    finish(edit(shape, 'Edited <text> & symbols\nSecond line'));
     const jsonShape = loadFromJSON(saveToJSON(doc)).getObjectById(shape.id);
     expect(jsonShape).toEqual(shape);
     const svg = saveToSVG(doc);

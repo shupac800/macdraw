@@ -1,4 +1,5 @@
-import { DEFAULT_PAGE } from '../util/constants.js';
+import { DEFAULT_PAGE, DEFAULT_STROKE, DEFAULT_FILL, FONTS } from '../util/constants.js';
+import { resetIdCounter } from './Shape.js';
 
 export class Document {
   constructor(options = {}) {
@@ -9,7 +10,19 @@ export class Document {
     this.groups = [];
     this._listeners = [];
     this.snapToGrid = false;
-    this.gridSize = 18;
+    this.gridSize = 9;
+    this.name = 'Untitled';
+    this.showGrid = false;
+    this.showRulers = true;
+    this.showRulerLines = true;
+    this.showSize = false;
+    this.rulerOrigin = { x: 0, y: 0 };
+    this.rulerMajor = 1;
+    this.rulerDivisions = 8;
+    this.rulerIncrement = 1;
+    this._defaultStroke = { ...DEFAULT_STROKE, patternId: null };
+    this._defaultFill = { ...DEFAULT_FILL };
+    this._defaultText = { fontFamily: FONTS[0].value, fontSize: 12, fontWeight: 'normal', fontStyle: 'normal', textDecoration: 'none', textAlign: 'left', lineSpacing: 1, outline: false, shadow: false };
   }
 
   addObject(shape) {
@@ -146,6 +159,21 @@ export class Document {
       groups: [...this.groups],
       snapToGrid: this.snapToGrid,
       gridSize: this.gridSize,
+      name: this.name,
+      showGrid: this.showGrid,
+      showRulers: this.showRulers,
+      showRulerLines: this.showRulerLines,
+      showSize: this.showSize,
+      rulerOrigin: { ...this.rulerOrigin },
+      rulerMajor: this.rulerMajor,
+      rulerDivisions: this.rulerDivisions,
+      rulerIncrement: this.rulerIncrement,
+      _defaultStroke: this._defaultStroke,
+      _defaultFill: this._defaultFill,
+      _defaultText: this._defaultText,
+      _cornerRadius: this._cornerRadius ?? 18,
+      _startArrow: this._startArrow || 'none',
+      _endArrow: this._endArrow || 'none',
     };
   }
 
@@ -158,7 +186,11 @@ export class Document {
     doc.objects = data.objects || [];
     doc.groups = data.groups || [];
     doc.snapToGrid = data.snapToGrid || false;
-    doc.gridSize = data.gridSize || 18;
+    doc.gridSize = data.gridSize || 9;
+    for (const key of ['name', 'showGrid', 'showRulers', 'showRulerLines', 'showSize', 'rulerOrigin', 'rulerMajor', 'rulerDivisions', 'rulerIncrement', '_defaultStroke', '_defaultFill', '_defaultText', '_cornerRadius', '_startArrow', '_endArrow']) {
+      if (data[key] !== undefined) doc[key] = key.startsWith('_default') ? { ...doc[key], ...structuredClone(data[key]) } : structuredClone(data[key]);
+    }
+    resetIdCounter(Math.max(0, ...doc.objects.map(o => Number(/^shape_(\d+)$/.exec(o.id)?.[1]) || 0)) + 1);
     return doc;
   }
 }

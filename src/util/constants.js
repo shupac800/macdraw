@@ -22,15 +22,15 @@ export const DEFAULT_STROKE = {
 };
 
 export const DEFAULT_FILL = {
-  type: 'none', // 'none', 'solid', 'pattern'
+  type: 'solid', // 'none', 'solid', 'pattern'
   color: '#ffffff',
   patternId: null,
 };
 
-export const HANDLE_SIZE = 8;
+export const HANDLE_SIZE = 5;
 export const ROTATION_HANDLE_DISTANCE = 24;
 export const MIN_SHAPE_SIZE = 2;
-export const GRID_SIZE = 18; // 1/4 inch
+export const GRID_SIZE = 9; // 1/8 inch
 export const SNAP_THRESHOLD = 6;
 export const NUDGE_AMOUNT = 1;
 export const NUDGE_LARGE_AMOUNT = 10;
@@ -43,11 +43,22 @@ export const TOOLS = {
   ROUND_RECT: 'roundRect',
   OVAL: 'oval',
   LINE: 'line',
+  PERPENDICULAR: 'perpendicular',
   ARC: 'arc',
   POLYGON: 'polygon',
   FREEHAND: 'freehand',
   TEXT: 'text',
 };
+
+export const FONTS = [
+  { label: 'Chicago', value: 'Chicago, Charcoal, Arial, sans-serif' },
+  { label: 'Geneva', value: 'Geneva, Arial, sans-serif' },
+  { label: 'New York', value: 'New York, Georgia, serif' },
+  { label: 'Monaco', value: 'Monaco, Consolas, monospace' },
+  { label: 'Times', value: 'Times New Roman, serif' },
+  { label: 'Helvetica', value: 'Helvetica, Arial, sans-serif' },
+  { label: 'Courier', value: 'Courier New, monospace' },
+];
 
 export const ARROW_TYPES = {
   NONE: 'none',

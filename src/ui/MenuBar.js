@@ -1,311 +1,126 @@
-import { DeleteShapeCommand } from '../commands/DeleteShapeCommand.js';
-import { ArrangeCommand } from '../commands/ArrangeCommand.js';
-import { GroupCommand, UngroupCommand } from '../commands/GroupCommand.js';
-import { TransformCommand } from '../commands/TransformCommand.js';
-import { MoveCommand } from '../commands/MoveCommand.js';
-import { getBounds } from '../model/Shape.js';
-import { saveToLocalStorage, clearLocalStorage, downloadSVG, openSVGFile, exportToPDF } from '../util/serialize.js';
+import { FONTS } from '../util/constants.js';
+import chicagoLicense from '../../assets/fonts/LICENSE-Chicago-Kare.txt?raw';
 
+const separator = { type: 'separator' };
 export class MenuBar {
   constructor(container, app) {
-    this.container = container;
-    this.app = app;
-    this._openMenu = null;
-    this._build();
-
-    // Close menus on outside click
-    document.addEventListener('click', (e) => {
-      if (!this.container.contains(e.target)) {
-        this._closeAll();
-      }
+    this.container = container; this.app = app; this.opened = null; this.menus = this.definitions();
+    container.className = 'menubar'; container.setAttribute('role', 'menubar'); container.setAttribute('aria-label', 'MacDraw menus');
+    this.menus.forEach(menu => {
+      const wrapper = document.createElement('div'); wrapper.className = `menu-wrapper${menu.apple ? ' apple-menu' : ''}`;
+      const trigger = document.createElement('button'); trigger.className = 'menu-trigger'; trigger.setAttribute('aria-haspopup', 'menu'); trigger.setAttribute('aria-expanded', 'false'); trigger.setAttribute('aria-label', menu.label);
+      if (menu.apple) trigger.innerHTML = '<svg viewBox="0 0 16 18" aria-hidden="true"><path d="M10 0c0 3-2 4-3 4 0-2 1-4 3-4M8 5C4 2 0 6 1 11c1 5 3 7 5 6l2-1 2 1c2 1 4-2 5-5-4-2-3-5 0-7-2-2-4-2-7 0z"/></svg>';
+      else trigger.textContent = menu.label;
+      trigger.addEventListener('click', () => this.opened?.menu === menu ? this.close() : this.open(menu, wrapper));
+      trigger.addEventListener('mouseenter', () => { if (this.opened && this.opened.menu !== menu) this.open(menu, wrapper); });
+      wrapper.append(trigger); container.append(wrapper); menu.wrapper = wrapper; menu.trigger = trigger;
     });
+    document.addEventListener('pointerdown', e => { if (!container.contains(e.target)) this.close(); });
   }
-
-  _build() {
-    this.container.innerHTML = '';
-    this.container.className = 'menubar';
-
-    const menus = this._getMenuDefs();
-    for (const menu of menus) {
-      const menuEl = this._createMenu(menu);
-      this.container.appendChild(menuEl);
-    }
-  }
-
-  _getMenuDefs() {
+  definitions() {
+    const app = this.app, a = app.actions, d = app.doc;
+    const has = () => a.editable.length > 0, text = () => a.editable.some(s => s.type === 'text') || app.selection.isEmpty;
+    const currentText = () => a.selected.find(s => s.type === 'text') || d._defaultText;
+    const item = (label, action, enabled, shortcut, checked) => ({ label, action, enabled, shortcut, checked });
     return [
-      {
-        label: 'File', items: [
-          { label: 'New', action: () => this._fileNew(), shortcut: 'Ctrl+N' },
-          { type: 'separator' },
-          { label: 'Open SVG…', action: () => this._fileOpen(), shortcut: 'Ctrl+O' },
-          { label: 'Save SVG…', action: () => this._fileSave(), shortcut: 'Ctrl+S' },
-          { type: 'separator' },
-          { label: 'Export PDF…', action: () => this._exportPDF() },
-        ]
-      },
-      {
-        label: 'Edit', items: [
-          { label: 'Undo', action: () => this.app.commandStack.undo(), shortcut: 'Ctrl+Z', enabled: () => this.app.commandStack.canUndo },
-          { label: 'Redo', action: () => this.app.commandStack.redo(), shortcut: 'Ctrl+Y', enabled: () => this.app.commandStack.canRedo },
-          { type: 'separator' },
-          { label: 'Cut', action: () => this._cut(), shortcut: 'Ctrl+X', enabled: () => !this.app.selection.isEmpty },
-          { label: 'Copy', action: () => this._copy(), shortcut: 'Ctrl+C', enabled: () => !this.app.selection.isEmpty },
-          { label: 'Paste', action: () => this._paste(), shortcut: 'Ctrl+V', enabled: () => !this.app.clipboard.isEmpty },
-          { type: 'separator' },
-          { label: 'Delete', action: () => this._delete(), shortcut: 'Del', enabled: () => !this.app.selection.isEmpty },
-          { label: 'Select All', action: () => this._selectAll(), shortcut: 'Ctrl+A' },
-        ]
-      },
-      {
-        label: 'Arrange', items: [
-          { label: 'Bring to Front', action: () => this._arrange('front'), enabled: () => this.app.selection.count === 1 },
-          { label: 'Bring Forward', action: () => this._arrange('forward'), enabled: () => this.app.selection.count === 1 },
-          { label: 'Send Backward', action: () => this._arrange('backward'), enabled: () => this.app.selection.count === 1 },
-          { label: 'Send to Back', action: () => this._arrange('back'), enabled: () => this.app.selection.count === 1 },
-          { type: 'separator' },
-          { label: 'Group', action: () => this._group(), shortcut: 'Ctrl+G', enabled: () => this.app.selection.count >= 2 },
-          { label: 'Ungroup', action: () => this._ungroup(), shortcut: 'Ctrl+Shift+G', enabled: () => this._hasGroupSelected() },
-          { type: 'separator' },
-          { label: 'Flip Horizontal', action: () => this._flip('flipH'), enabled: () => !this.app.selection.isEmpty },
-          { label: 'Flip Vertical', action: () => this._flip('flipV'), enabled: () => !this.app.selection.isEmpty },
-          { type: 'separator' },
-          { label: 'Align Left', action: () => this._align('left'), enabled: () => this.app.selection.count >= 2 },
-          { label: 'Align Center', action: () => this._align('center'), enabled: () => this.app.selection.count >= 2 },
-          { label: 'Align Right', action: () => this._align('right'), enabled: () => this.app.selection.count >= 2 },
-          { label: 'Align Top', action: () => this._align('top'), enabled: () => this.app.selection.count >= 2 },
-          { label: 'Align Middle', action: () => this._align('middle'), enabled: () => this.app.selection.count >= 2 },
-          { label: 'Align Bottom', action: () => this._align('bottom'), enabled: () => this.app.selection.count >= 2 },
-        ]
-      },
-      {
-        label: 'View', items: [
-          { label: 'Toggle Grid', action: () => this._toggleGrid() },
-          { label: 'Toggle Snap to Grid', action: () => this._toggleSnap() },
-        ]
-      },
+      { label: 'Apple', apple: true, items: [item('About MacDraw…', () => this.about()), separator, item('MacDraw Help…', () => this.help(), null, 'F1'), separator,
+        item('Screen: Automatic', () => app.screen.setScale('auto'), null, null, () => app.screen.preference === 'auto'),
+        item('Screen: 512 × 342 (1×)', () => app.screen.setScale('1'), null, null, () => app.screen.preference === '1'),
+        item('Screen: 1024 × 684 (2×)', () => app.screen.setScale('2'), null, null, () => app.screen.preference === '2'),
+        item('Screen: 1536 × 1026 (3×)', () => app.screen.setScale('3'), null, null, () => app.screen.preference === '3'),
+      ] },
+      { label: 'File', items: [
+        item('New', () => app.files.newDocument(), null, 'Ctrl+N'), item('Open…', () => app.files.open(), null, 'Ctrl+O'), separator,
+        item('Close', () => app.files.newDocument()), item('Save', () => app.files.save(), null, 'Ctrl+S'), item('Save As…', () => app.files.save(true), null, 'Ctrl+Shift+S'), item('Revert…', () => app.files.revert(), () => !!app.files.savedDocument), separator,
+        item('Page Setup…', () => a.pageDialog()), item('Print…', () => app.files.print(), null, 'Ctrl+P'), separator,
+        item('Export SVG…', () => app.files.exportSVG()), item('Export PNG…', () => app.files.exportPNG()), item('Download Drawing…', () => app.files.download()),
+      ] },
+      { label: 'Edit', items: [
+        item(() => `Undo${app.commandStack.undoLabel ? ' ' + app.commandStack.undoLabel : ''}`, () => a.undo(), () => app.commandStack.canUndo, 'Ctrl+Z'), item(() => `Redo${app.commandStack.redoLabel ? ' ' + app.commandStack.redoLabel : ''}`, () => a.redo(), () => app.commandStack.canRedo, 'Ctrl+Y'), separator,
+        item('Cut', () => a.cut(), has, 'Ctrl+X'), item('Copy', () => a.copy(), () => !app.selection.isEmpty, 'Ctrl+C'), item('Paste', () => a.paste(), () => !app.clipboard.isEmpty, 'Ctrl+V'), item('Clear', () => a.remove(), has, 'Del'), separator,
+        item('Select All', () => a.selectAll(), () => d.objects.length > 0, 'Ctrl+A'), item('Duplicate', () => a.duplicate(), has, 'Ctrl+D'), separator,
+        item('Reshape Arc…', () => a.reshapeDialog(), () => a.editable.some(s => s.type === 'arc')), item('Smooth', () => a.smooth(true), () => a.editable.some(s => ['polygon','freehand'].includes(s.type))), item('Unsmooth', () => a.smooth(false), () => a.editable.some(s => ['polygon','freehand'].includes(s.type))), item('Round Corners…', () => a.cornersDialog(), () => app.selection.isEmpty || a.editable.some(s => ['rect','roundRect'].includes(s.type))),
+      ] },
+      { label: 'Style', items: [
+        item('Plain Text', () => a.plainText(), text), item('Bold', () => a.toggleText('fontWeight', 'bold', 'normal'), text, null, () => currentText().fontWeight === 'bold'), item('Italic', () => a.toggleText('fontStyle', 'italic', 'normal'), text, null, () => currentText().fontStyle === 'italic'), item('Underline', () => a.toggleText('textDecoration', 'underline', 'none'), text, null, () => currentText().textDecoration === 'underline'), item('Outline', () => a.toggleText('outline', true, false), text, null, () => currentText().outline), item('Shadow', () => a.toggleText('shadow', true, false), text, null, () => currentText().shadow), separator,
+        ...['left','center','right'].map(value => item(value[0].toUpperCase() + value.slice(1), () => a.style('textAlign', value), text, null, () => currentText().textAlign === value)), separator,
+        ...[[1,'Single Space'],[1.5,'1½ Space'],[2,'Double Space']].map(([value,label]) => item(label, () => a.style('lineSpacing', value), text, null, () => currentText().lineSpacing === value)), separator,
+        item('Lowercase', () => a.textCase('lower'), () => a.editable.some(s => s.type === 'text')), item('Uppercase', () => a.textCase('upper'), () => a.editable.some(s => s.type === 'text')), item('Title', () => a.textCase('title'), () => a.editable.some(s => s.type === 'text')),
+      ] },
+      { label: 'Font', items: [
+        ...FONTS.map(font => item(font.label, () => a.style('fontFamily', font.value, 'Font'), text, null, () => currentText().fontFamily === font.value)), separator,
+        ...[9,10,12,14,18,24,36,48].map(size => item(`${size} point`, () => a.style('fontSize', size, 'Font Size'), text, null, () => currentText().fontSize === size)),
+      ] },
+      { label: 'Layout', items: [
+        item(() => d.showRulers ? 'Hide Rulers' : 'Show Rulers', () => a.toggle('showRulers')), item('Custom Rulers…', () => a.rulersDialog()), item(() => d.showRulerLines ? 'Hide Ruler Lines' : 'Show Ruler Lines', () => a.toggle('showRulerLines')), separator,
+        item(() => d.snapToGrid ? 'Turn Grid Off' : 'Turn Grid On', () => a.toggle('snapToGrid')), item('Show Alignment Grid', () => a.toggle('showGrid'), null, null, () => d.showGrid), item('Show Size', () => a.toggle('showSize'), null, null, () => d.showSize), separator,
+        item('Actual Size', () => app.setZoom(1), null, 'Ctrl+1'), item('Reduce', () => app.setZoom(app.zoom / 2), () => app.zoom > 0.125), item('Enlarge', () => app.setZoom(app.zoom * 2), () => app.zoom < 4), item('View Entire Drawing', () => app.fitDrawing(), null, 'Ctrl+0'), item('Drawing Size…', () => a.sizeDialog()),
+      ] },
+      { label: 'Arrange', items: [
+        item('Bring to Front', () => a.arrange('front'), has), item('Send to Back', () => a.arrange('back'), has), item('Bring Forward', () => a.arrange('forward'), has), item('Send Backward', () => a.arrange('backward'), has), separator,
+        item('Paste in Front', () => a.paste('front', false), () => !app.clipboard.isEmpty), item('Paste in Back', () => a.paste('back', false), () => !app.clipboard.isEmpty), separator,
+        item('Rotate Left', () => a.rotate(-1), has), item('Rotate Right', () => a.rotate(1), has), item('Flip Horizontal', () => a.flip(true), has), item('Flip Vertical', () => a.flip(false), has), separator,
+        item('Group', () => a.group(), () => a.canGroup, 'Ctrl+G'), item('Ungroup', () => a.ungroup(), () => a.selected.some(s => s.groupId), 'Ctrl+Shift+G'), item('Lock', () => a.lock(true), has), item('Unlock', () => a.lock(false), () => a.selected.some(s => s.locked)), separator,
+        item('Align to Grid', () => a.alignToGrid(), has), item('Align Objects…', () => a.alignDialog(), () => a.editable.length >= 2),
+      ] },
+      { label: 'Fill', pattern: 'Fill', items: [] },
+      { label: 'Lines', items: [
+        item('No Border', () => a.style('stroke.width', 0, 'Line Width'), null, null, () => app.currentStyle('Pen').width === 0),
+        ...[1,2,3,4].map(width => ({ ...item(`${width} pixel${width === 1 ? '' : 's'}`, () => a.style('stroke.width', width, 'Line Width'), null, null, () => app.currentStyle('Pen').width === width), lineWidth: width })), separator,
+        item('No Arrows', () => a.arrows('none','none')), item('Arrow at End →', () => a.arrows('none','arrow')), item('Arrow at Start ←', () => a.arrows('arrow','none')), item('Arrows at Both Ends ↔', () => a.arrows('arrow','arrow')),
+      ] },
+      { label: 'Pen', pattern: 'Pen', items: [] },
     ];
   }
-
-  _createMenu(menu) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'menu-wrapper';
-
-    const trigger = document.createElement('button');
-    trigger.className = 'menu-trigger';
-    trigger.textContent = menu.label;
-    trigger.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this._toggleMenu(wrapper, menu);
-    });
-
-    wrapper.appendChild(trigger);
-    return wrapper;
+  openByLabel(label) { const menu = this.menus.find(m => m.label === label); if (menu) this.open(menu, menu.wrapper); }
+  open(menu, wrapper) {
+    this.app.finishText(); this.close();
+    this.opened = { menu, wrapper }; wrapper.classList.add('open'); menu.trigger.setAttribute('aria-expanded', 'true');
+    const dropdown = document.createElement('div'); dropdown.className = 'menu-dropdown'; dropdown.setAttribute('role', 'menu'); dropdown.setAttribute('aria-label', menu.label);
+    if (menu.pattern) {
+      dropdown.classList.add('pattern-menu');
+      if (menu.pattern === 'Fill') this.appendItem(dropdown, { label: 'None', action: () => this.app.applyPattern('Fill', null), checked: () => this.app.currentStyle('Fill').type === 'none' });
+      const heading = document.createElement('div'); heading.className = 'pattern-heading'; heading.textContent = `${menu.pattern} patterns`; dropdown.append(heading);
+      this.app.patternPicker.build(dropdown, menu.pattern, () => this.close());
+    } else menu.items.forEach(item => this.appendItem(dropdown, item));
+    wrapper.append(dropdown);
+    const rootBounds = document.getElementById('app').getBoundingClientRect();
+    const scale = rootBounds.width / 512;
+    const overflow = (dropdown.getBoundingClientRect().right - rootBounds.right) / scale;
+    if (overflow > 0) dropdown.style.left = `${-overflow - 3}px`;
   }
-
-  _toggleMenu(wrapper, menu) {
-    if (this._openMenu === wrapper) {
-      this._closeAll();
-      return;
-    }
-    this._closeAll();
-    this._openMenu = wrapper;
-    wrapper.classList.add('open');
-
-    const dropdown = document.createElement('div');
-    dropdown.className = 'menu-dropdown';
-
-    for (const item of menu.items) {
-      if (item.type === 'separator') {
-        const sep = document.createElement('div');
-        sep.className = 'menu-separator';
-        dropdown.appendChild(sep);
-        continue;
-      }
-
-      const el = document.createElement('button');
-      el.className = 'menu-item';
-      const enabled = item.enabled ? item.enabled() : true;
-      el.disabled = !enabled;
-
-      const label = document.createElement('span');
-      label.textContent = item.label;
-      el.appendChild(label);
-
-      if (item.shortcut) {
-        const shortcut = document.createElement('span');
-        shortcut.className = 'menu-shortcut';
-        shortcut.textContent = item.shortcut;
-        el.appendChild(shortcut);
-      }
-
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this._closeAll();
-        item.action();
-      });
-
-      dropdown.appendChild(el);
-    }
-
-    wrapper.appendChild(dropdown);
+  appendItem(dropdown, item) {
+    if (item.type === 'separator') { const sep = document.createElement('div'); sep.className = 'menu-separator'; sep.setAttribute('role','separator'); dropdown.append(sep); return; }
+    const button = document.createElement('button'); button.className = 'menu-item'; button.setAttribute('role', item.checked ? 'menuitemcheckbox' : 'menuitem');
+    const checked = !!item.checked?.(); if (item.checked) button.setAttribute('aria-checked', String(checked)); button.disabled = item.enabled ? !item.enabled() : false;
+    const check = document.createElement('span'); check.className = 'menu-check'; check.textContent = checked ? '✓' : ''; check.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span'); label.className = 'menu-label'; label.textContent = typeof item.label === 'function' ? item.label() : item.label;
+    if (item.lineWidth) { const sample = document.createElement('span'); sample.className = 'line-sample'; sample.style.setProperty('--line-width', `${item.lineWidth}px`); label.prepend(sample); }
+    button.append(check, label);
+    if (item.shortcut) { const shortcut = document.createElement('span'); shortcut.className = 'menu-shortcut'; shortcut.textContent = item.shortcut; button.append(shortcut); }
+    button.addEventListener('click', () => { this.close(); Promise.resolve(item.action()).catch(error => this.app.dialog.alert('MacDraw', error.message)); }); dropdown.append(button);
   }
-
-  _closeAll() {
-    if (this._openMenu) {
-      this._openMenu.classList.remove('open');
-      const dropdown = this._openMenu.querySelector('.menu-dropdown');
-      if (dropdown) dropdown.remove();
-      this._openMenu = null;
-    }
+  close() { if (this.opened) { this.opened.wrapper.querySelector('.menu-dropdown')?.remove(); this.opened.wrapper.classList.remove('open'); this.opened.menu.trigger.setAttribute('aria-expanded', 'false'); this.opened = null; } }
+  handleKey(e) {
+    if (e.key === 'F1') { e.preventDefault(); this.help(); return true; }
+    if (e.key === 'F10') { e.preventDefault(); this.open(this.menus[0], this.menus[0].wrapper); return true; }
+    if (!this.opened) return false;
+    if (e.key === 'Escape') { e.preventDefault(); const trigger = this.opened.menu.trigger; this.close(); trigger.focus(); return true; }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); const at = this.menus.indexOf(this.opened.menu), next = this.menus[(at + (e.key === 'ArrowRight' ? 1 : -1) + this.menus.length) % this.menus.length]; this.open(next, next.wrapper); next.wrapper.querySelector('.menu-dropdown button:not(:disabled)')?.focus(); return true; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const buttons = [...this.opened.wrapper.querySelectorAll('.menu-dropdown button:not(:disabled)')], at = buttons.indexOf(document.activeElement); buttons[(at + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus(); return true; }
+    return false;
   }
-
-  // File actions
-  _fileNew() {
-    if (confirm('Create a new document? Unsaved changes will be lost.')) {
-      this.app.doc.clear();
-      this.app.selection.clear();
-      this.app.commandStack.clear();
-      clearLocalStorage();
-    }
+  about() {
+    const credits = document.createElement('details');
+    const summary = document.createElement('summary'); summary.textContent = 'Chicago font license';
+    const license = document.createElement('pre'); license.style.cssText = 'white-space:pre-wrap;font:10px monospace;'; license.textContent = chicagoLicense;
+    credits.append(summary, license);
+    this.app.dialog.show({ title: 'MacDraw', message: 'A monochrome recreation of classic Macintosh MacDraw, adapted for Chrome on Windows. Chicago Kare by Duane King reproduces Susan Kare’s bitmap Chicago. Editable .macdraw files are this web app’s format, not the original Macintosh binary format.', content: credits, buttons: [{ label: 'OK', value: 'ok', default: true }] });
   }
-
-  async _fileOpen() {
-    try {
-      const doc = await openSVGFile();
-      if (doc) {
-        this.app.loadDocument(doc);
-      }
-    } catch (e) {
-      alert('Failed to open file: ' + e.message);
-    }
-  }
-
-  _fileSave() {
-    downloadSVG(this.app.doc, this.app.patternRegistry);
-  }
-
-  _exportPDF() {
-    exportToPDF(this.app.doc, this.app.patternRegistry);
-  }
-
-  // Edit actions
-  _cut() {
-    this.app.clipboard.copy(this.app.selection.getSelectedObjects(this.app.doc));
-    this.app.commandStack.execute(new DeleteShapeCommand(this.app.doc, this.app.selection.ids));
-    this.app.selection.clear();
-  }
-
-  _copy() {
-    this.app.clipboard.copy(this.app.selection.getSelectedObjects(this.app.doc));
-  }
-
-  _paste() {
-    const { shapes: pasted, groups } = this.app.clipboard.paste();
-    for (const shape of pasted) {
-      shape.x += 10; shape.y += 10;
-      if (shape.points) shape.points = shape.points.map(p => ({ x: p.x + 10, y: p.y + 10 }));
-      this.app.doc.addObject(shape);
-    }
-    for (const group of groups) {
-      this.app.doc.addGroup(group);
-    }
-    this.app.selection.selectMultiple(pasted.map(s => s.id));
-  }
-
-  _delete() {
-    this.app.commandStack.execute(new DeleteShapeCommand(this.app.doc, this.app.selection.ids));
-    this.app.selection.clear();
-  }
-
-  _selectAll() {
-    this.app.selection.selectMultiple(this.app.doc.objects.map(o => o.id));
-  }
-
-  // Arrange actions
-  _arrange(dir) {
-    const id = this.app.selection.ids[0];
-    this.app.commandStack.execute(new ArrangeCommand(this.app.doc, id, dir));
-  }
-
-  _group() {
-    this.app.commandStack.execute(new GroupCommand(this.app.doc, this.app.selection.ids));
-  }
-
-  _ungroup() {
-    const selected = this.app.selection.getSelectedObjects(this.app.doc);
-    const groupIds = new Set(selected.map(s => s.groupId).filter(Boolean));
-    for (const gid of groupIds) {
-      this.app.commandStack.execute(new UngroupCommand(this.app.doc, gid));
-    }
-  }
-
-  _hasGroupSelected() {
-    const selected = this.app.selection.getSelectedObjects(this.app.doc);
-    return selected.some(s => s.groupId);
-  }
-
-  _flip(prop) {
-    for (const id of this.app.selection.ids) {
-      const shape = this.app.doc.getObjectById(id);
-      if (shape) {
-        this.app.commandStack.execute(
-          new TransformCommand(this.app.doc, [id], prop, !shape[prop])
-        );
-      }
-    }
-  }
-
-  _align(direction) {
-    const shapes = this.app.selection.getSelectedObjects(this.app.doc);
-    if (shapes.length < 2) return;
-
-    const allBounds = shapes.map(s => ({ id: s.id, bounds: getBounds(s) }));
-
-    // Compute reference
-    let ref;
-    switch (direction) {
-      case 'left': ref = Math.min(...allBounds.map(b => b.bounds.x)); break;
-      case 'center': {
-        const left = Math.min(...allBounds.map(b => b.bounds.x));
-        const right = Math.max(...allBounds.map(b => b.bounds.x + b.bounds.width));
-        ref = (left + right) / 2;
-        break;
-      }
-      case 'right': ref = Math.max(...allBounds.map(b => b.bounds.x + b.bounds.width)); break;
-      case 'top': ref = Math.min(...allBounds.map(b => b.bounds.y)); break;
-      case 'middle': {
-        const top = Math.min(...allBounds.map(b => b.bounds.y));
-        const bottom = Math.max(...allBounds.map(b => b.bounds.y + b.bounds.height));
-        ref = (top + bottom) / 2;
-        break;
-      }
-      case 'bottom': ref = Math.max(...allBounds.map(b => b.bounds.y + b.bounds.height)); break;
-    }
-
-    for (const { id, bounds } of allBounds) {
-      let dx = 0, dy = 0;
-      switch (direction) {
-        case 'left': dx = ref - bounds.x; break;
-        case 'center': dx = ref - (bounds.x + bounds.width / 2); break;
-        case 'right': dx = ref - (bounds.x + bounds.width); break;
-        case 'top': dy = ref - bounds.y; break;
-        case 'middle': dy = ref - (bounds.y + bounds.height / 2); break;
-        case 'bottom': dy = ref - (bounds.y + bounds.height); break;
-      }
-      if (dx !== 0 || dy !== 0) {
-        this.app.commandStack.execute(new MoveCommand(this.app.doc, [id], dx, dy));
-      }
-    }
-  }
-
-  _toggleGrid() {
-    this.app.doc.snapToGrid = !this.app.doc.snapToGrid;
-    this.app.doc._notify('grid');
-  }
-
-  _toggleSnap() {
-    this.app.doc.snapToGrid = !this.app.doc.snapToGrid;
-    this.app.doc._notify('snap');
+  help() {
+    const table = document.createElement('table'); table.className = 'help-table';
+    const rows = [ ['Drawing', 'Choose a tool and drag. The arrow returns after each object. Double-click a tool to keep drawing.'], ['Selection', 'Click an object; Shift-click to add or remove. Drag a box around objects. Drag a black handle to resize.'], ['Constraints', 'Shift makes squares/circles, constrains diagonal lines to 45°, and constrains moves. The + tool makes horizontal/vertical lines.'], ['Polygons', 'Click each vertex. Click the starting point to close; double-click to finish an open polygon. Enter closes. Escape cancels.'], ['Text', 'Click for a caption, or drag a paragraph width. Double-click text to edit. Escape cancels; Ctrl+Enter or clicking elsewhere commits.'], ['Appearance', 'Fill sets opaque black/white patterns or None. Pen sets the line pattern. Lines sets widths and arrowheads.'], ['Files', 'Save/Open use editable .macdraw files. Chrome offers Windows file dialogs. Download Drawing is the portable save option. SVG embeds Chicago; PNG is black-and-white.'], ['Shortcuts', 'Ctrl+Z/Y undo/redo; Ctrl+C/X/V clipboard; Ctrl+D duplicate; Ctrl+G group; Ctrl+Shift+G ungroup; arrows nudge.'], ['View', 'Ctrl+0 fits the drawing; Ctrl+1 shows actual size. Ctrl+mouse wheel zooms. Layout controls rulers, grid, and measurements.'] ];
+    rows.forEach(([name, explanation]) => { const row = document.createElement('tr'); for (const text of [name, explanation]) { const cell = document.createElement('td'); cell.textContent = text; row.append(cell); } table.append(row); });
+    this.app.dialog.show({ title: 'MacDraw Help', content: table, buttons: [{ label: 'OK', value: 'ok', default: true }] });
   }
 }

@@ -1,5 +1,7 @@
 import { Document } from '../model/Document.js';
 import { createShape, resetIdCounter } from '../model/Shape.js';
+import { patternSVG } from './patterns.js';
+import { textLayout } from './text.js';
 
 const STORAGE_KEY = 'macdraw_document';
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -8,12 +10,70 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 // ─── JSON (localStorage autosave only) ───────────────────────────
 
 export function saveToJSON(doc) {
-  return JSON.stringify(doc.toJSON(), null, 2);
+  return JSON.stringify({ format: 'macdraw-web', formatVersion: 1, ...doc.toJSON() }, null, 2);
 }
 
 export function loadFromJSON(jsonString) {
   const data = JSON.parse(jsonString);
+  validateDocument(data);
   return Document.fromJSON(data);
+}
+
+export function validateDocument(data) {
+  if (!data || !Array.isArray(data.objects) || !Array.isArray(data.groups)) throw new Error('This is not an editable MacDraw drawing.');
+  if (data.formatVersion && data.formatVersion !== 1) throw new Error('This drawing uses an unsupported file version.');
+  for (const key of ['pageWidth', 'pageHeight']) if (!Number.isFinite(data[key]) || data[key] <= 0 || data[key] > 8192) throw new Error('Invalid drawing dimensions.');
+  if (data.objects.length > 10000) throw new Error('Too many objects in this drawing.');
+  const ids = new Set();
+  for (const shape of data.objects) {
+    if (!shape || !['rect', 'roundRect', 'oval', 'line', 'arc', 'polygon', 'freehand', 'text'].includes(shape.type)) throw new Error('Invalid drawing object.');
+    if (typeof shape.id !== 'string' || ids.has(shape.id)) throw new Error('Drawing object IDs must be unique.'); ids.add(shape.id);
+    for (const key of ['x','y','width','height','rotation']) if (!Number.isFinite(shape[key])) throw new Error('Invalid object geometry.');
+    if (shape.width < 0 || shape.height < 0 || shape.width > 100000 || shape.height > 100000 || Math.abs(shape.x) > 100000 || Math.abs(shape.y) > 100000) throw new Error('Invalid object bounds.');
+    if (!shape.stroke || !Number.isFinite(shape.stroke.width) || shape.stroke.width < 0 || shape.stroke.width > 100 || !shape.fill) throw new Error('Invalid object appearance.');
+    for (const style of [shape.stroke, shape.fill]) if (style.patternId != null && (!Number.isInteger(style.patternId) || style.patternId < 0 || style.patternId > 35)) throw new Error('Invalid pattern.');
+    if (shape.points && (!Array.isArray(shape.points) || shape.points.length > 100000 || shape.points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y)))) throw new Error('Invalid drawing points.');
+    if (shape.type === 'line' && shape.points?.length !== 2) throw new Error('A line must have two endpoints.');
+    if (shape.type === 'text' && (typeof shape.text !== 'string' || !Number.isFinite(shape.fontSize) || shape.fontSize < 1 || shape.fontSize > 1000)) throw new Error('Invalid text object.');
+  }
+  if (data.gridSize !== undefined && (!Number.isFinite(data.gridSize) || data.gridSize < 0.01 || data.gridSize > 10000)) throw new Error('Invalid grid spacing.');
+  if (data.rulerMajor !== undefined && (!Number.isFinite(data.rulerMajor) || data.rulerMajor <= 0)) throw new Error('Invalid ruler spacing.');
+  if (data.rulerDivisions !== undefined && (!Number.isFinite(data.rulerDivisions) || data.rulerDivisions < 1 || data.rulerDivisions > 100)) throw new Error('Invalid ruler divisions.');
+  if (data.unit !== undefined && !['inches','cm','points'].includes(data.unit)) throw new Error('Invalid ruler units.');
+  if (data.name !== undefined && (typeof data.name !== 'string' || data.name.length > 255)) throw new Error('Invalid drawing name.');
+  for (const key of ['snapToGrid','showGrid','showRulers','showRulerLines','showSize']) if (data[key] !== undefined && typeof data[key] !== 'boolean') throw new Error('Invalid drawing settings.');
+  if (data.rulerOrigin && (!Number.isFinite(data.rulerOrigin.x) || !Number.isFinite(data.rulerOrigin.y))) throw new Error('Invalid ruler zero point.');
+  if (data.rulerIncrement !== undefined && (!Number.isFinite(data.rulerIncrement) || data.rulerIncrement <= 0)) throw new Error('Invalid ruler numbering.');
+  const groupIds = new Set();
+  for (const g of data.groups) {
+    if (!g || typeof g.id !== 'string' || groupIds.has(g.id) || !Array.isArray(g.members) || g.members.some(id => !ids.has(id))) throw new Error('Invalid drawing group.');
+    groupIds.add(g.id);
+    if (g.previousGroups && (typeof g.previousGroups !== 'object' || Object.entries(g.previousGroups).some(([id, previous]) => !ids.has(id) || (previous != null && typeof previous !== 'string')))) throw new Error('Invalid nested group.');
+  }
+  for (const s of data.objects) {
+    validateAppearance(s.stroke, s.fill);
+    if (s.groupId != null && !groupIds.has(s.groupId)) throw new Error('Missing drawing group.');
+    for (const key of ['cornerRadius','startAngle','endAngle']) if (s[key] !== undefined && !Number.isFinite(s[key])) throw new Error('Invalid object geometry.');
+    if (s.type === 'text') validateText(s);
+  }
+  if (data._defaultStroke !== undefined) validateAppearance(data._defaultStroke, { type: 'none' });
+  if (data._defaultFill !== undefined) validateAppearance({ width: 0 }, data._defaultFill);
+  if (data._defaultText !== undefined) { if (!data._defaultText || typeof data._defaultText !== 'object') throw new Error('Invalid text defaults.'); validateText({ fontSize: 12, ...data._defaultText }); }
+  if (data._cornerRadius !== undefined && (!Number.isFinite(data._cornerRadius) || data._cornerRadius < 0)) throw new Error('Invalid corner radius.');
+}
+
+function validateAppearance(stroke, fill) {
+  if (!stroke || typeof stroke !== 'object' || !Number.isFinite(stroke.width) || stroke.width < 0 || stroke.width > 100 || !fill || !['none','solid','pattern'].includes(fill.type)) throw new Error('Invalid drawing appearance.');
+  for (const style of [stroke, fill]) {
+    if (style.color !== undefined && (typeof style.color !== 'string' || style.color.length > 100)) throw new Error('Invalid drawing color.');
+    if (style.patternId != null && (!Number.isInteger(style.patternId) || style.patternId < 0 || style.patternId > 35)) throw new Error('Invalid drawing pattern.');
+  }
+  if (fill.type === 'pattern' && !Number.isInteger(fill.patternId)) throw new Error('Missing fill pattern.');
+  if (stroke.dash !== undefined && (!Array.isArray(stroke.dash) || stroke.dash.length > 100 || stroke.dash.some(n => !Number.isFinite(n) || n < 0))) throw new Error('Invalid line style.');
+}
+
+function validateText(text) {
+  if (!text || !Number.isFinite(text.fontSize) || text.fontSize < 1 || text.fontSize > 1000 || (text.fontFamily !== undefined && (typeof text.fontFamily !== 'string' || text.fontFamily.length > 200)) || (text.lineSpacing !== undefined && (!Number.isFinite(text.lineSpacing) || text.lineSpacing <= 0 || text.lineSpacing > 10))) throw new Error('Invalid text style.');
 }
 
 export function saveToLocalStorage(doc) {
@@ -49,11 +109,16 @@ export function saveToSVG(doc) {
   svg.setAttribute('width', doc.pageWidth);
   svg.setAttribute('height', doc.pageHeight);
   svg.setAttribute('viewBox', `0 0 ${doc.pageWidth} ${doc.pageHeight}`);
+  const paper = document.createElementNS(SVG_NS, 'rect');
+  paper.setAttribute('width', '100%'); paper.setAttribute('height', '100%'); paper.setAttribute('fill', '#fff'); paper.setAttribute('data-md-paper', 'true');
+  svg.append(paper);
 
   // Store document metadata
   svg.setAttribute('data-md-unit', doc.unit);
   svg.setAttribute('data-md-snapToGrid', doc.snapToGrid);
   svg.setAttribute('data-md-gridSize', doc.gridSize);
+  // A native snapshot preserves all editing information, without changing paint order.
+  const metadata = document.createElementNS(SVG_NS, 'metadata'); metadata.setAttribute('id', 'macdraw-document'); metadata.textContent = saveToJSON(doc); svg.append(metadata);
 
   // Define patterns used by shapes
   const usedPatterns = new Set();
@@ -61,6 +126,7 @@ export function saveToSVG(doc) {
     if (obj.fill?.type === 'pattern' && obj.fill.patternId != null) {
       usedPatterns.add(obj.fill.patternId);
     }
+    if (obj.stroke?.patternId != null) usedPatterns.add(obj.stroke.patternId);
   }
 
   if (usedPatterns.size > 0) {
@@ -84,32 +150,14 @@ export function saveToSVG(doc) {
     }
   }
 
-  // Collect groups
-  const groupMap = new Map(); // groupId → <g> element
-  for (const group of doc.groups) {
-    const g = document.createElementNS(SVG_NS, 'g');
-    g.setAttribute('id', group.id);
-    g.setAttribute('data-md-type', 'group');
-    groupMap.set(group.id, g);
-  }
-
+  // Paint every shape in document order. Group membership is editing metadata;
+  // collecting SVG groups at the end used to change the exported stacking order.
   // Render each shape
   for (const obj of doc.objects) {
     const el = shapeToSVGElement(obj);
     if (!el) continue;
 
-    if (obj.groupId && groupMap.has(obj.groupId)) {
-      groupMap.get(obj.groupId).appendChild(el);
-    } else {
-      svg.appendChild(el);
-    }
-  }
-
-  // Append group <g> elements
-  for (const g of groupMap.values()) {
-    if (g.childNodes.length > 0) {
-      svg.appendChild(g);
-    }
+    svg.appendChild(el);
   }
 
   // Serialize to string
@@ -189,7 +237,18 @@ function shapeToSVGElement(shape) {
     case 'polygon':
     case 'freehand': {
       if (!shape.points || shape.points.length < 2) return null;
-      if (shape.closed) {
+      if (shape.smooth && shape.points.length > 2) {
+        el = document.createElementNS(SVG_NS, 'path');
+        const pts = shape.points, last = pts.at(-1);
+        const start = shape.closed ? { x: (last.x + pts[0].x) / 2, y: (last.y + pts[0].y) / 2 } : pts[0];
+        let d = `M ${start.x} ${start.y}`;
+        for (let i = shape.closed ? 0 : 1; i < pts.length; i++) {
+          const next = pts[(i + 1) % pts.length];
+          const end = !shape.closed && i === pts.length - 1 ? pts[i] : { x: (pts[i].x + next.x) / 2, y: (pts[i].y + next.y) / 2 };
+          d += ` Q ${pts[i].x} ${pts[i].y} ${end.x} ${end.y}`;
+        }
+        el.setAttribute('d', d + (shape.closed ? ' Z' : ''));
+      } else if (shape.closed) {
         el = document.createElementNS(SVG_NS, 'polygon');
         el.setAttribute('points', shape.points.map(p => `${p.x},${p.y}`).join(' '));
       } else {
@@ -201,7 +260,13 @@ function shapeToSVGElement(shape) {
     }
 
     case 'text': {
-      el = document.createElementNS(SVG_NS, 'text');
+      const group = document.createElementNS(SVG_NS, 'g');
+      const text = document.createElementNS(SVG_NS, 'text');
+      el = text;
+      // The same font metrics and wrapping drive the canvas and the exported SVG.
+      const ctx = typeof window !== 'undefined' ? document.createElement('canvas').getContext('2d') : null;
+      const fallback = { measureText: line => ({ width: line.length * shape.fontSize * 0.6 }) };
+      const { lines, ascent, lineHeight } = textLayout(ctx || fallback, shape);
       let textX = shape.x;
       let anchor = 'start';
       if (shape.textAlign === 'center') {
@@ -212,13 +277,13 @@ function shapeToSVGElement(shape) {
         anchor = 'end';
       }
       el.setAttribute('x', textX);
-      el.setAttribute('y', shape.y + shape.fontSize);
+      el.setAttribute('y', shape.y + ascent);
       el.setAttribute('text-anchor', anchor);
       el.setAttribute('font-family', shape.fontFamily);
       el.setAttribute('font-size', shape.fontSize);
       if (shape.fontWeight !== 'normal') el.setAttribute('font-weight', shape.fontWeight);
       if (shape.fontStyle !== 'normal') el.setAttribute('font-style', shape.fontStyle);
-      if (shape.textDecoration !== 'none') el.setAttribute('text-decoration', shape.textDecoration);
+      el.setAttribute('xml:space', 'preserve');
 
       // Store bounds for round-trip
       el.setAttribute('data-md-x', shape.x);
@@ -228,15 +293,34 @@ function shapeToSVGElement(shape) {
       el.setAttribute('data-md-textAlign', shape.textAlign);
 
       // Multi-line: use <tspan> elements
-      const lines = (shape.text || '').split('\n');
-      const lineHeight = shape.fontSize * 1.3;
       lines.forEach((line, i) => {
         const tspan = document.createElementNS(SVG_NS, 'tspan');
         tspan.setAttribute('x', textX);
-        if (i > 0) tspan.setAttribute('dy', lineHeight);
+        tspan.setAttribute('y', shape.y + ascent + i * lineHeight);
         tspan.textContent = line;
         el.appendChild(tspan);
       });
+      applyStrokeFillAttrs(text, shape);
+      if (shape.fill.type !== 'none') {
+        const background = document.createElementNS(SVG_NS, 'rect');
+        for (const key of ['x','y','width','height']) background.setAttribute(key, shape[key]);
+        applyStrokeFillAttrs(background, { ...shape, type: 'rect', stroke: { width: 0 } }); group.append(background);
+      }
+      if (shape.shadow) {
+        const shadow = text.cloneNode(true); shadow.setAttribute('fill', '#000'); shadow.setAttribute('stroke', 'none'); shadow.setAttribute('transform', 'translate(2 2)'); group.append(shadow);
+        const gap = text.cloneNode(true); gap.setAttribute('fill', '#fff'); gap.setAttribute('stroke', 'none'); gap.setAttribute('transform', 'translate(1 1)'); group.append(gap);
+      }
+      group.append(text);
+      if (shape.textDecoration === 'underline') lines.forEach((line, i) => {
+        const width = (ctx || fallback).measureText(line).width;
+        const x = textX - (anchor === 'middle' ? width / 2 : anchor === 'end' ? width : 0);
+        const rule = document.createElementNS(SVG_NS, 'line');
+        rule.setAttribute('x1', x); rule.setAttribute('x2', x + width); rule.setAttribute('y1', shape.y + ascent + i * lineHeight + 2); rule.setAttribute('y2', shape.y + ascent + i * lineHeight + 2); rule.setAttribute('stroke', '#000'); group.append(rule);
+      });
+      group.setAttribute('data-md-type', 'text');
+      // Keep the old text primitive for simple exports; the wrapper is needed for
+      // patterned backgrounds, shadows and hand-drawn underline positioning.
+      if (shape.fill.type !== 'none' || shape.shadow || shape.textDecoration === 'underline') el = group;
       break;
     }
 
@@ -246,7 +330,7 @@ function shapeToSVGElement(shape) {
 
   // Common attributes
   el.setAttribute('id', shape.id);
-  applyStrokeFillAttrs(el, shape);
+  if (shape.type !== 'text' || el.localName === 'text') applyStrokeFillAttrs(el, shape);
 
   if (transforms) el.setAttribute('transform', transforms);
   if (shape.locked) el.setAttribute('data-md-locked', 'true');
@@ -257,7 +341,7 @@ function shapeToSVGElement(shape) {
 function applyStrokeFillAttrs(el, shape) {
   // Stroke
   if (shape.stroke && shape.stroke.width > 0) {
-    el.setAttribute('stroke', shape.stroke.color);
+    el.setAttribute('stroke', shape.stroke.patternId != null ? `url(#macdraw-pattern-${shape.stroke.patternId})` : shape.stroke.color);
     el.setAttribute('stroke-width', shape.stroke.width);
     if (shape.stroke.cap !== 'butt') el.setAttribute('stroke-linecap', shape.stroke.cap);
     if (shape.stroke.join !== 'miter') el.setAttribute('stroke-linejoin', shape.stroke.join);
@@ -278,12 +362,14 @@ function applyStrokeFillAttrs(el, shape) {
     el.setAttribute('data-md-fillType', 'pattern');
     el.setAttribute('data-md-patternId', shape.fill.patternId);
   }
+  if (shape.type === 'text') { el.setAttribute('fill', '#000'); el.setAttribute('stroke', shape.outline ? '#000' : 'none'); if (shape.outline) { el.setAttribute('fill', 'none'); el.setAttribute('stroke-width', '1'); } }
 }
 
 function buildTransform(shape) {
   const parts = [];
-  const cx = shape.x + shape.width / 2;
-  const cy = shape.y + shape.height / 2;
+  const xs = shape.points?.map(p => p.x), ys = shape.points?.map(p => p.y);
+  const cx = xs?.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : shape.x + shape.width / 2;
+  const cy = ys?.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : shape.y + shape.height / 2;
 
   if (shape.rotation) {
     const deg = shape.rotation * (180 / Math.PI);
@@ -315,6 +401,10 @@ function arcToSVGPath(shape) {
   const largeArc = sweep > Math.PI ? 1 : 0;
 
   let d = `M ${x1} ${y1} A ${rx} ${ry} 0 ${largeArc} 1 ${x2} ${y2}`;
+  if (sweep >= Math.PI * 2 - 1e-8) {
+    const mx = cx + rx * Math.cos(start + Math.PI), my = cy + ry * Math.sin(start + Math.PI);
+    d = `M ${x1} ${y1} A ${rx} ${ry} 0 1 1 ${mx} ${my} A ${rx} ${ry} 0 1 1 ${x1} ${y1}`;
+  }
 
   if (shape.arcType === 'pie') {
     d += ` L ${cx} ${cy} Z`;
@@ -330,25 +420,27 @@ function createArrowMarker() {
 
   const markerEnd = document.createElementNS(SVG_NS, 'marker');
   markerEnd.setAttribute('id', 'arrowhead-end');
+  markerEnd.setAttribute('markerUnits', 'userSpaceOnUse');
   markerEnd.setAttribute('markerWidth', '12');
-  markerEnd.setAttribute('markerHeight', '8');
-  markerEnd.setAttribute('refX', '12');
-  markerEnd.setAttribute('refY', '4');
+  markerEnd.setAttribute('markerHeight', '12');
+  markerEnd.setAttribute('refX', '10.392');
+  markerEnd.setAttribute('refY', '6');
   markerEnd.setAttribute('orient', 'auto');
   const pathEnd = document.createElementNS(SVG_NS, 'path');
-  pathEnd.setAttribute('d', 'M 0 0 L 12 4 L 0 8 Z');
+  pathEnd.setAttribute('d', 'M 0 0 L 10.392 6 L 0 12 Z');
   pathEnd.setAttribute('fill', 'context-stroke');
   markerEnd.appendChild(pathEnd);
 
   const markerStart = document.createElementNS(SVG_NS, 'marker');
   markerStart.setAttribute('id', 'arrowhead-start');
   markerStart.setAttribute('markerWidth', '12');
-  markerStart.setAttribute('markerHeight', '8');
-  markerStart.setAttribute('refX', '0');
-  markerStart.setAttribute('refY', '4');
+  markerStart.setAttribute('markerUnits', 'userSpaceOnUse');
+  markerStart.setAttribute('markerHeight', '12');
+  markerStart.setAttribute('refX', '10.392');
+  markerStart.setAttribute('refY', '6');
   markerStart.setAttribute('orient', 'auto-start-reverse');
   const pathStart = document.createElementNS(SVG_NS, 'path');
-  pathStart.setAttribute('d', 'M 12 0 L 0 4 L 12 8 Z');
+  pathStart.setAttribute('d', 'M 0 0 L 10.392 6 L 0 12 Z');
   pathStart.setAttribute('fill', 'context-stroke');
   markerStart.appendChild(pathStart);
 
@@ -358,52 +450,18 @@ function createArrowMarker() {
 }
 
 function createSVGPatternDef(patternId) {
-  // Patterns are procedural — we encode them as an SVG <pattern> with an <image>
-  // referencing a data URI from the offscreen canvas.
-  // This requires the PatternRegistry at save time, so we'll embed a simple
-  // placeholder. The actual pattern rendering is handled by patternRegistry
-  // if available at save time.
+  // Pixel rectangles keep the tiles portable and exactly black-and-white.
   const pat = document.createElementNS(SVG_NS, 'pattern');
   pat.setAttribute('id', `macdraw-pattern-${patternId}`);
   pat.setAttribute('width', '8');
   pat.setAttribute('height', '8');
   pat.setAttribute('patternUnits', 'userSpaceOnUse');
-  // The actual pattern image will be injected by saveToSVGWithPatterns
+  pat.setAttribute('shape-rendering', 'crispEdges');
+  pat.innerHTML = patternSVG(patternId);
   return pat;
 }
 
-/**
- * Save to SVG with pattern images embedded.
- * Call this from the app where patternRegistry is available.
- */
-export function saveToSVGWithPatterns(doc, patternRegistry) {
-  const svgString = saveToSVG(doc);
-
-  if (!patternRegistry) return svgString;
-
-  // Parse, inject pattern images, re-serialize
-  const parser = new DOMParser();
-  const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
-  const svg = svgDoc.documentElement;
-
-  // Find all pattern elements and inject their canvas data
-  const patterns = svg.querySelectorAll('pattern[id^="macdraw-pattern-"]');
-  for (const pat of patterns) {
-    const id = parseInt(pat.getAttribute('id').replace('macdraw-pattern-', ''));
-    const canvas = patternRegistry.getPatternCanvas(id);
-    if (canvas) {
-      const dataURL = canvas.toDataURL('image/png');
-      const img = svgDoc.createElementNS(SVG_NS, 'image');
-      img.setAttribute('href', dataURL);
-      img.setAttribute('width', '8');
-      img.setAttribute('height', '8');
-      pat.appendChild(img);
-    }
-  }
-
-  const serializer = new XMLSerializer();
-  return '<?xml version="1.0" encoding="UTF-8"?>\n' + serializer.serializeToString(svg);
-}
+export function saveToSVGWithPatterns(doc) { return saveToSVG(doc); }
 
 // ─── SVG Load ─────────────────────────────────────────────────────
 
@@ -422,6 +480,9 @@ export function loadFromSVG(svgString) {
     throw new Error('Invalid SVG: root element is not <svg>');
   }
 
+  const metadata = svg.querySelector('metadata[id="macdraw-document"]');
+  if (metadata) return loadFromJSON(metadata.textContent);
+
   const pageWidth = parseFloat(svg.getAttribute('width')) || 612;
   const pageHeight = parseFloat(svg.getAttribute('height')) || 792;
   const unit = svg.getAttribute('data-md-unit') || 'inches';
@@ -436,41 +497,27 @@ export function loadFromSVG(svgString) {
   // Track max shape id for counter reset
   let maxId = 0;
 
-  // Parse groups
   const groups = [];
-  const groupElements = svg.querySelectorAll('g[data-md-type="group"]');
-  for (const gEl of groupElements) {
-    const groupId = gEl.getAttribute('id');
-    const memberIds = [];
-    for (const child of gEl.children) {
-      const shape = svgElementToShape(child);
-      if (shape) {
-        shape.groupId = groupId;
-        doc.addObject(shape);
-        memberIds.push(shape.id);
-        maxId = Math.max(maxId, parseIdNum(shape.id));
+  const readChildren = (parent, group = null) => {
+    for (const child of parent.children) {
+      if (['defs','metadata','style'].includes(child.localName) || child.hasAttribute('data-md-paper')) continue;
+      if (child.localName === 'g') {
+        const current = child.getAttribute('data-md-type') === 'group' ? { id: child.getAttribute('id') || `group_${crypto.randomUUID()}`, members: [] } : group;
+        if (current && current !== group) groups.push(current);
+        readChildren(child, current);
+        continue;
       }
+      const shape = svgElementToShape(child);
+      if (shape) { if (group) { shape.groupId = group.id; group.members.push(shape.id); } doc.addObject(shape); maxId = Math.max(maxId, parseIdNum(shape.id)); }
     }
-    groups.push({ id: groupId, members: memberIds });
-  }
-
-  // Parse top-level shapes (not in groups)
-  for (const child of svg.children) {
-    if (child.tagName === 'defs') continue;
-    if (child.tagName === 'g' && child.getAttribute('data-md-type') === 'group') continue;
-
-    const shape = svgElementToShape(child);
-    if (shape) {
-      doc.addObject(shape);
-      maxId = Math.max(maxId, parseIdNum(shape.id));
-    }
-  }
+  };
+  readChildren(svg);
 
   doc.groups = groups;
 
   // Reset ID counter past existing IDs
   resetIdCounter(maxId + 1);
-
+  validateDocument(doc.toJSON());
   return doc;
 }
 

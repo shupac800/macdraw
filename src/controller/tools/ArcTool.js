@@ -39,7 +39,7 @@ export class ArcTool {
     const rect = normalizeRect(this._startPoint.x, this._startPoint.y, point.x - this._startPoint.x, point.y - this._startPoint.y);
     if (rect.width < MIN_SHAPE_SIZE && rect.height < MIN_SHAPE_SIZE) return;
 
-    const shape = createShape('arc', rect);
+    const shape = createShape('arc', { ...rect, startAngle: Math.PI, endAngle: Math.PI * 1.5, stroke: { ...this.doc._defaultStroke }, fill: { type: 'none', color: '#fff', patternId: null } });
     this.commandStack.execute(new AddShapeCommand(this.doc, shape));
     this.selection.select(shape.id);
     this.manager.setActiveTool(TOOLS.SELECT);

@@ -1,62 +1,38 @@
 import { TOOLS } from '../util/constants.js';
 
-const TOOL_DEFS = [
-  { id: TOOLS.SELECT, label: 'Select', shortcut: 'V', icon: 'cursor' },
-  { id: TOOLS.LINE, label: 'Line', shortcut: 'L', icon: 'line' },
-  { id: TOOLS.RECT, label: 'Rectangle', shortcut: 'R', icon: 'rect' },
-  { id: TOOLS.ROUND_RECT, label: 'Rounded Rect', shortcut: 'U', icon: 'roundRect' },
-  { id: TOOLS.OVAL, label: 'Oval', shortcut: 'O', icon: 'oval' },
-  { id: TOOLS.ARC, label: 'Arc', shortcut: 'A', icon: 'arc' },
-  { id: TOOLS.POLYGON, label: 'Polygon', shortcut: 'P', icon: 'polygon' },
-  { id: TOOLS.FREEHAND, label: 'Freehand', shortcut: 'F', icon: 'freehand' },
-  { id: TOOLS.TEXT, label: 'Text', shortcut: 'T', icon: 'text' },
+const DEFS = [
+  [TOOLS.SELECT, 'Selection arrow', 'V', '<path fill="currentColor" d="M4 2v17l4-5 4 7 3-2-4-7h7z"/>'],
+  [TOOLS.TEXT, 'Text', 'T', '<path d="M4 4h14M11 4v15M7 19h8"/>'],
+  [TOOLS.PERPENDICULAR, 'Perpendicular lines', 'H', '<path d="M11 3v16M3 11h16"/>'],
+  [TOOLS.LINE, 'Diagonal lines', 'L', '<path d="M4 4l14 14"/>'],
+  [TOOLS.RECT, 'Rectangle', 'R', '<rect x="3" y="5" width="16" height="12"/>'],
+  [TOOLS.ROUND_RECT, 'Round-corner rectangle', 'U', '<rect x="3" y="5" width="16" height="12" rx="4"/>'],
+  [TOOLS.OVAL, 'Circle / oval', 'O', '<ellipse cx="11" cy="11" rx="8" ry="6"/>'],
+  [TOOLS.ARC, 'Arc', 'A', '<path d="M3 4a15 15 0 0 1 15 15"/>'],
+  [TOOLS.FREEHAND, 'Freehand shape', 'F', '<path d="M3 17c15 5 12-15 6-13s1 14 10 13"/>'],
+  [TOOLS.POLYGON, 'Polygon', 'P', '<path d="M3 5l7 5 9-6-4 14-11-3z"/>'],
 ];
 
-const ICONS = {
-  cursor: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 10-6 1-3 6z"/></svg>`,
-  line: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="20" x2="20" y2="4"/></svg>`,
-  rect: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="5" width="16" height="14"/></svg>`,
-  roundRect: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="5" width="16" height="14" rx="4"/></svg>`,
-  oval: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg>`,
-  arc: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20 A16 16 0 0 1 20 4"/></svg>`,
-  polygon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,3 21,10 18,21 6,21 3,10"/></svg>`,
-  freehand: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18c2-4 4-2 6-6s2-6 4-6 2 4 4 2 2-4 2-4"/></svg>`,
-  text: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4h12M12 4v16M8 20h8"/></svg>`,
-};
-
 export class Toolbar {
-  constructor(container, toolManager) {
-    this.container = container;
-    this.toolManager = toolManager;
-    this._buttons = {};
-    this._build();
-
-    toolManager.onChange((toolName) => this._updateActive(toolName));
-  }
-
-  _build() {
-    this.container.innerHTML = '';
-    this.container.className = 'toolbar';
-
-    for (const tool of TOOL_DEFS) {
-      const btn = document.createElement('button');
-      btn.className = 'toolbar-btn';
-      btn.title = `${tool.label} (${tool.shortcut})`;
-      btn.innerHTML = ICONS[tool.icon] || tool.label[0];
-      btn.dataset.tool = tool.id;
-
-      btn.addEventListener('click', () => {
-        this.toolManager.setActiveTool(tool.id);
-      });
-
-      this._buttons[tool.id] = btn;
-      this.container.appendChild(btn);
+  constructor(container, manager) {
+    container.className = 'toolbar'; container.setAttribute('role', 'toolbar'); container.setAttribute('aria-label', 'Drawing tools');
+    this.buttons = new Map(); this.manager = manager;
+    for (const [id, name, key, icon] of DEFS) {
+      const button = document.createElement('button'); button.className = 'toolbar-btn';
+      button.title = `${name} (${key}) — double-click to keep drawing`;
+      button.setAttribute('aria-label', `${name} (${key})`); button.dataset.tool = id;
+      button.innerHTML = `<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">${icon}</svg>`;
+      button.addEventListener('click', () => { manager.chooseTool(id); this.update(); });
+      button.addEventListener('dblclick', () => { manager.chooseTool(id, true); this.update(); });
+      this.buttons.set(id, button); container.append(button);
     }
+    manager.onChange(() => this.update());
   }
-
-  _updateActive(toolName) {
-    for (const [id, btn] of Object.entries(this._buttons)) {
-      btn.classList.toggle('active', id === toolName);
+  update() {
+    for (const [id, button] of this.buttons) {
+      const active = id === this.manager.getActiveTool();
+      button.classList.toggle('active', active); button.classList.toggle('locked', id === this.manager.lockedTool);
+      button.setAttribute('aria-pressed', String(active));
     }
   }
 }

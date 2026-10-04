@@ -11,6 +11,7 @@ export class ToolManager {
     this._activeTool = null;
     this._activeToolName = null;
     this._listeners = [];
+    this.lockedTool = null;
   }
 
   registerTool(name, tool) {
@@ -24,6 +25,12 @@ export class ToolManager {
   }
 
   setActiveTool(name) {
+    if (name === TOOLS.SELECT && this.lockedTool && this._activeToolName === this.lockedTool) {
+      this._activeTool?.deactivate?.();
+      this._activeTool?.activate?.();
+      this.doc._notify('preview');
+      return;
+    }
     if (this._activeTool && this._activeTool.deactivate) {
       this._activeTool.deactivate();
     }
@@ -33,10 +40,17 @@ export class ToolManager {
       this._activeTool.activate();
     }
     this._notifyListeners();
+    this.doc._notify('preview');
   }
 
   getActiveTool() {
     return this._activeToolName;
+  }
+
+  chooseTool(name, locked = false) {
+    this.lockedTool = locked && name !== TOOLS.SELECT ? name : null;
+    this.setActiveTool(name);
+    if (name !== TOOLS.SELECT) this.selection.clear();
   }
 
   onMouseDown(point, modifiers) {
