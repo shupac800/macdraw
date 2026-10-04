@@ -36,6 +36,8 @@ export class InputHandler {
   }
 
   _onMouseDown(e) {
+    // Tools manage focus; the canvas default must not blur a newly opened editor.
+    e.preventDefault();
     const point = this._getDocPoint(e);
     this.toolManager.onMouseDown(point, {
       shiftKey: e.shiftKey,
@@ -81,10 +83,12 @@ export class InputHandler {
   }
 
   _onKeyDown(e) {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.isContentEditable) return;
     this.toolManager.onKeyDown(e);
   }
 
   _onKeyUp(e) {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.isContentEditable) return;
     this.toolManager.onKeyUp(e);
   }
 

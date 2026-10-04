@@ -26,9 +26,9 @@ export class TextTool {
   }
 
   onMouseDown(point) {
-    if (this._textarea) {
+    const wasEditing = !!this._textarea;
+    if (wasEditing) {
       this._finishEditing();
-      return;
     }
 
     // Check if clicking on existing text shape
@@ -38,6 +38,9 @@ export class TextTool {
       this.startEditing(hit);
       return;
     }
+
+    // A click away finishes the draft without creating an accidental object.
+    if (wasEditing) return;
 
     this._drawing = true;
     this._startPoint = { ...point };
@@ -76,75 +79,107 @@ export class TextTool {
   }
 
   startEditing(shape) {
-    this._editingShape = shape;
+    if (this._editingShape === shape && this._textarea) {
+      this._textarea.focus();
+      return;
+    }
+    this._finishEditing();
 
     const canvas = this.cursor?.canvas;
     if (!canvas) return;
+    this._editingShape = shape;
 
     const canvasRect = canvas.getBoundingClientRect();
     const textarea = document.createElement('textarea');
     textarea.value = shape.text || '';
-    textarea.style.cssText = `
-      position: absolute;
-      left: ${canvasRect.left + shape.x}px;
-      top: ${canvasRect.top + shape.y}px;
-      width: ${Math.max(shape.width, 100)}px;
-      min-height: ${Math.max(shape.height, 24)}px;
-      font-family: ${shape.fontFamily};
-      font-size: ${shape.fontSize}px;
-      font-weight: ${shape.fontWeight};
-      font-style: ${shape.fontStyle};
-      text-align: ${shape.textAlign};
-      border: 2px solid #2196F3;
-      outline: none;
-      background: rgba(255,255,255,0.95);
-      padding: 2px 4px;
-      resize: none;
-      overflow: hidden;
-      z-index: 1000;
-      box-sizing: border-box;
-      line-height: 1.3;
-    `;
-
-    document.body.appendChild(textarea);
-    textarea.focus();
-    this._textarea = textarea;
-
-    // Auto-resize
-    textarea.addEventListener('input', () => {
-      textarea.style.height = 'auto';
-      textarea.style.height = textarea.scrollHeight + 'px';
+    textarea.wrap = 'off';
+    textarea.setAttribute('aria-label', 'Edit text');
+    textarea.title = 'Enter: new line. Escape or Ctrl+Enter: finish. Ctrl+Escape: cancel.';
+    Object.assign(textarea.style, {
+      position: 'fixed',
+      left: `${canvasRect.left + shape.x}px`,
+      top: `${canvasRect.top + shape.y}px`,
+      width: `${Math.max(shape.width, 100)}px`,
+      minHeight: `${Math.max(shape.height, 24)}px`,
+      fontFamily: shape.fontFamily,
+      fontSize: `${shape.fontSize}px`,
+      fontWeight: shape.fontWeight,
+      fontStyle: shape.fontStyle,
+      textAlign: shape.textAlign,
+      textDecoration: shape.textDecoration,
+      color: shape.fill.type === 'none' ? '#000000' : shape.fill.color,
+      transform: `rotate(${shape.rotation || 0}rad) scale(${shape.flipH ? -1 : 1}, ${shape.flipV ? -1 : 1})`,
+      transformOrigin: 'center',
+      border: 'none',
+      outline: '2px solid #2196F3',
+      background: 'rgba(255,255,255,0.95)',
+      padding: '0',
+      resize: 'none',
+      overflow: 'hidden',
+      zIndex: '1000',
+      boxSizing: 'border-box',
+      lineHeight: '1.3',
     });
 
+    this._textarea = textarea;
+    document.body.appendChild(textarea);
+    this._resizeEditor();
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+    // Auto-resize
+    textarea.addEventListener('input', () => this._resizeEditor());
+
     textarea.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        this._finishEditing();
+      e.stopPropagation();
+      if (e.isComposing) return;
+      if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+        e.preventDefault();
+        // Keep Escape's existing finish behavior; Ctrl+Escape discards a draft.
+        this._finishEditing(!(e.key === 'Escape' && (e.ctrlKey || e.metaKey)));
         this.manager.setActiveTool(TOOLS.SELECT);
       }
     });
+    textarea.addEventListener('keyup', (e) => e.stopPropagation());
+    textarea.addEventListener('blur', () => this._finishEditing());
 
     // Prevent canvas events while editing
     textarea.addEventListener('mousedown', (e) => e.stopPropagation());
   }
 
-  _finishEditing() {
+  _resizeEditor() {
+    const shape = this._editingShape;
+    const textarea = this._textarea;
+    const ctx = this.cursor.canvas.getContext('2d');
+    const lines = textarea.value.split('\n');
+    ctx.save();
+    ctx.font = `${shape.fontStyle} ${shape.fontWeight} ${shape.fontSize}px ${shape.fontFamily}`;
+    const textWidth = lines.reduce((width, line) => Math.max(width, ctx.measureText(line).width), 0);
+    ctx.restore();
+    // Canvas text does not wrap. Fit explicit lines so all visible text is hittable.
+    textarea.style.width = `${Math.max(shape.width, 100, Math.ceil(textWidth) + 4)}px`;
+    textarea.style.height = `${Math.max(shape.height, 24, Math.ceil(lines.length * shape.fontSize * 1.3) + 4)}px`;
+  }
+
+  _finishEditing(commit = true) {
     if (!this._textarea || !this._editingShape) return;
 
-    const newText = this._textarea.value;
+    const textarea = this._textarea;
+    const newText = textarea.value;
     const shape = this._editingShape;
 
-    if (newText !== shape.text) {
-      this.commandStack.execute(new EditTextCommand(this.doc, shape.id, newText));
-    }
-
-    // Update shape dimensions based on text
-    if (newText) {
-      shape.width = Math.max(shape.width, parseInt(this._textarea.style.width));
-      shape.height = Math.max(shape.height, this._textarea.scrollHeight);
-    }
-
-    this._textarea.remove();
+    // Clear state before removing the focused editor, which can trigger blur.
     this._textarea = null;
     this._editingShape = null;
+    textarea.remove();
+
+    if (commit && this.doc.getObjectById(shape.id) === shape && newText !== shape.text) {
+      const dimensions = newText ? {
+        width: parseFloat(textarea.style.width),
+        height: parseFloat(textarea.style.height),
+      } : { width: shape.width, height: shape.height };
+      // Retain empty text objects so they can be edited again or restored by Undo.
+      this.commandStack.execute(new EditTextCommand(this.doc, shape.id, newText, dimensions));
+    }
   }
 }

@@ -107,6 +107,19 @@ export function getMultiBounds(shapes) {
 export function hitTest(shape, point, threshold = 5) {
   const bounds = getBounds(shape);
 
+  if (shape.type === 'text' && (shape.rotation || shape.flipH || shape.flipV)) {
+    const cx = bounds.x + bounds.width / 2;
+    const cy = bounds.y + bounds.height / 2;
+    const dx = point.x - cx;
+    const dy = point.y - cy;
+    const angle = shape.rotation || 0;
+    // Invert the canvas rotation and flips before testing the text box.
+    point = {
+      x: cx + (dx * Math.cos(angle) + dy * Math.sin(angle)) * (shape.flipH ? -1 : 1),
+      y: cy + (-dx * Math.sin(angle) + dy * Math.cos(angle)) * (shape.flipV ? -1 : 1),
+    };
+  }
+
   switch (shape.type) {
     case 'rect':
     case 'roundRect':
