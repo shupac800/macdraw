@@ -1,8 +1,9 @@
 import { TOOLS } from '../util/constants.js';
+import textToolBitmap from '../../assets/bitmaps/text-tool.png';
 
 const DEFS = [
   [TOOLS.SELECT, 'Selection arrow', 'V', '<path fill="currentColor" d="M4 2v17l4-5 4 7 3-2-4-7h7z"/>'],
-  [TOOLS.TEXT, 'Text', 'T', '<path d="M4 4h14M11 4v15M7 19h8"/>'],
+  [TOOLS.TEXT, 'Text', 'T', null],
   [TOOLS.PERPENDICULAR, 'Perpendicular lines', 'H', '<path d="M11 3v16M3 11h16"/>'],
   [TOOLS.LINE, 'Diagonal lines', 'L', '<path d="M4 4l14 14"/>'],
   [TOOLS.RECT, 'Rectangle', 'R', '<rect x="3" y="5" width="16" height="12"/>'],
@@ -21,7 +22,13 @@ export class Toolbar {
       const button = document.createElement('button'); button.className = 'toolbar-btn';
       button.title = `${name} (${key}) — double-click to keep drawing`;
       button.setAttribute('aria-label', `${name} (${key})`); button.dataset.tool = id;
-      button.innerHTML = `<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">${icon}</svg>`;
+      if (id === TOOLS.TEXT) {
+        const image = document.createElement('img'); image.src = textToolBitmap;
+        image.width = 9; image.height = 11; image.alt = ''; image.setAttribute('aria-hidden', 'true');
+        button.append(image);
+      } else {
+        button.innerHTML = `<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">${icon}</svg>`;
+      }
       button.addEventListener('click', () => { manager.chooseTool(id); this.update(); });
       button.addEventListener('dblclick', () => { manager.chooseTool(id, true); this.update(); });
       this.buttons.set(id, button); container.append(button);

@@ -10,6 +10,8 @@ import { KeyboardShortcuts } from '../src/controller/KeyboardShortcuts.js';
 import { TextTool } from '../src/controller/tools/TextTool.js';
 import { SelectTool } from '../src/controller/tools/SelectTool.js';
 import { saveToJSON, loadFromJSON, saveToSVG, loadFromSVG } from '../src/util/serialize.js';
+import { SelectionOverlay } from '../src/view/SelectionOverlay.js';
+import { getHandlePositions, getSelectionHandleBounds } from '../src/util/geometry.js';
 import { TOOLS } from '../src/util/constants.js';
 
 describe('TextTool editing', () => {
@@ -64,6 +66,25 @@ describe('TextTool editing', () => {
 
   function finish(editor) { return key(editor, 'Enter', { ctrlKey: true }); }
   function current(shape) { return doc.getObjectById(shape.id); }
+
+  it.each([0.125, 0.5, 1, 1.25, 2, 4])('centers a short text editing frame between clear handles at zoom %s', zoom => {
+    manager.zoom = zoom;
+    const shape = addText({ text: 'dfdf', width: 30, height: 16 });
+    const editor = edit(shape, shape.text);
+    expect(editor.style.height).toBe(`${shape.height * zoom}px`);
+    expect(editor.style.width).toBe(`${shape.width * zoom}px`);
+    expect(editor.style.transformOrigin).toBe(`${shape.width * zoom / 2}px ${shape.height * zoom / 2}px`);
+    const handles = getHandlePositions(getSelectionHandleBounds(getBounds(shape), zoom, true));
+    expect(handles.w.y).toBe(shape.y + shape.height / 2);
+    expect(handles.e.y).toBe(handles.w.y);
+    // Each five-pixel handle leaves room for the one-pixel outline and a white gap.
+    expect((shape.x - handles.w.x) * zoom - 2.5 - 1).toBeGreaterThanOrEqual(1 - 1e-10);
+    expect((handles.e.x - shape.x - shape.width) * zoom - 2.5 - 1).toBeCloseTo((shape.x - handles.w.x) * zoom - 2.5 - 1);
+    expect((shape.y - handles.n.y) * zoom - 2.5 - 1).toBeGreaterThanOrEqual(1 - 1e-10);
+    expect((handles.s.y - shape.y - shape.height) * zoom - 2.5 - 1).toBeCloseTo((shape.y - handles.n.y) * zoom - 2.5 - 1);
+    finish(editor);
+    expect(current(shape).height).toBe(16);
+  });
 
   it('reopens the selected original with its text, styling and transform', () => {
     const shape = addText({ fontFamily: 'Courier New', fontSize: 20, fontWeight: 'bold',
@@ -383,4 +404,31 @@ describe('TextTool editing', () => {
       flipV: shape.flipV, fontWeight: shape.fontWeight, fontStyle: shape.fontStyle,
       textDecoration: shape.textDecoration, textAlign: shape.textAlign, fill: shape.fill });
   });
+  it.each([0.125, 0.5, 1, 1.25, 2, 4])('keeps new text selection, drag and padded resize handles aligned at zoom %s', zoom => {
+    manager.zoom = zoom;
+    const overlay = new SelectionOverlay(doc, selection); overlay.zoom = zoom; overlay.showRotationHandle = false;
+    tool.overlay = overlay; const select = manager._tools[TOOLS.SELECT]; select.overlay = overlay; select.cursor = null;
+    manager.onMouseDown({ x: 100, y: 100 }, {}); manager.onMouseUp({ x: 100, y: 100 }, {});
+    const editor = tool._textarea; editor.value = 'Text label'; finish(editor);
+    let shape = doc.objects[0]; const original = structuredClone(shape);
+    expect(document.querySelector('.text-editor')).toBeNull(); expect(doc._editingId).toBeUndefined();
+    expect(selection.ids).toEqual([shape.id]); expect(manager.getActiveTool()).toBe(TOOLS.SELECT);
+    const mods = { shiftKey: false };
+    const center = { x: shape.x + shape.width / 2, y: shape.y + shape.height / 2 };
+    select.onMouseDown(center, mods); expect(select._mode).toBe('move');
+    select.onMouseUp({ x: center.x + 20, y: center.y + 10 }, mods);
+    expect(shape).toMatchObject({ x: original.x + 20, y: original.y + 10, width: original.width, height: original.height, text: original.text });
+    stack.undo(); shape = doc.getObjectById(shape.id); expect(shape).toEqual(original);
+    const bounds = getSelectionHandleBounds(getBounds(shape), zoom, true), handle = getHandlePositions(bounds).se;
+    select.cursor = { setForHandle: vi.fn(), setMove: vi.fn(), setDefault: vi.fn() };
+    select._updateHoverCursor(handle); expect(select.cursor.setForHandle).toHaveBeenCalledWith('se');
+    select.onMouseDown(handle, mods); expect(select._mode).toBe('resize'); expect(select._handle).toBe('se');
+    select.onMouseUp({ x: handle.x + 20, y: handle.y + 10 }, mods);
+    expect(shape).toMatchObject({ x: original.x, y: original.y, text: original.text });
+    expect(shape.width).toBeCloseTo(original.width + 20);
+    expect(shape.height).toBeCloseTo(original.height + 10);
+    stack.undo(); expect(doc.getObjectById(shape.id)).toEqual(original);
+    expect(selection.ids).toEqual([shape.id]);
+  });
+
 });

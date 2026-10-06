@@ -28,8 +28,11 @@ export class MacScreen {
   update() {
     const geometry = screenGeometry(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1, this.preference);
     Object.assign(this, geometry);
-    this.element.style.transform = `scale(${geometry.scale})`;
-    this.element.style.left = `${geometry.left}px`; this.element.style.top = `${geometry.top}px`;
+    this.element.style.transform = `translate(${geometry.left}px, ${geometry.top}px) scale(${geometry.scale})`;
+    // Layout positions are quantized to 1/64 CSS pixels in Chrome. Keep the
+    // centering translation in the transform so fractional DPR does not shift
+    // bitmap pixels off the physical display grid.
+    this.element.style.left = '0px'; this.element.style.top = '0px';
     this.element.dataset.screenScale = geometry.pixels;
     this.element.setAttribute('aria-label', `Macintosh screen, ${512 * geometry.pixels} by ${342 * geometry.pixels} display pixels`);
   }

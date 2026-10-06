@@ -1,3 +1,5 @@
+import { HANDLE_SIZE } from './constants.js';
+
 /**
  * Geometry utility functions for hit testing, point/rect math.
  */
@@ -178,4 +180,16 @@ export function getHandlePositions(bounds) {
     sw: { x, y: y + height },
     w: { x, y: my },
   };
+}
+
+// Keep text handles clear of the first/last glyph. This is display padding,
+// not object geometry, so drawing zoom must not change the visible clearance.
+export function getSelectionHandleBounds(bounds, zoom = 1, text = false) {
+  if (!text) return bounds;
+  const padding = (HANDLE_SIZE / 2 + 2) / zoom; // Editor outline plus one clear pixel.
+  const minimum = 2 * (HANDLE_SIZE + 1) / zoom;
+  const px = Math.max(padding, (minimum - bounds.width) / 2);
+  const py = Math.max(padding, (minimum - bounds.height) / 2);
+  return { x: bounds.x - px, y: bounds.y - py,
+    width: bounds.width + px * 2, height: bounds.height + py * 2 };
 }
