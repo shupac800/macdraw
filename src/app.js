@@ -67,7 +67,7 @@ export class MacDraw {
     viewport.addEventListener('scroll', () => { this.rulerRenderer.render(); this.renderer.requestRender(); });
     viewport.addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); this.setZoom(this.zoom * (e.deltaY < 0 ? 1.25 : 0.8)); } }, { passive: false });
     document.getElementById('close-box').addEventListener('click', () => this.files.newDocument());
-    document.getElementById('zoom-box').addEventListener('click', () => { document.getElementById('document-window').classList.toggle('expanded'); this._handleResize(); });
+    document.getElementById('zoom-box').addEventListener('click', () => this.fitDrawing());
     document.getElementById('style-preview').addEventListener('click', () => this.menuBar.openByLabel('Fill'));
     document.getElementById('zoom-level').addEventListener('click', () => this.actions.zoomDialog());
     window.addEventListener('resize', () => { this.screen.update(); this._handleResize(); });
@@ -127,11 +127,12 @@ export class MacDraw {
     document.getElementById('document-title').textContent = title; document.title = `${title} — MacDraw`;
     document.getElementById('zoom-level').textContent = `${Math.round(this.zoom * 100)}%`;
     const objects = this.selection.getSelectedObjects(this.doc), preview = this.selectionOverlay.interactionPreview;
-    let status = objects.length ? `${objects.length} object${objects.length === 1 ? '' : 's'} selected${objects.some(o => o.locked) ? ' (locked)' : ''}` : 'Choose a tool. Double-click a tool to keep drawing.';
+    let status = objects.length ? `${objects.length} object${objects.length === 1 ? '' : 's'} selected${objects.some(o => o.locked) ? ' (locked)' : ''}` : '';
     if (this.doc.showSize && (preview || objects[0])) {
       const b = getBounds(preview || objects[0]), unit = this.doc.unit === 'cm' ? 72 / 2.54 : this.doc.unit === 'points' ? 1 : 72;
       status += `   X ${(b.x / unit).toFixed(2)}   Y ${(b.y / unit).toFixed(2)}   W ${(b.width / unit).toFixed(2)}   H ${(b.height / unit).toFixed(2)} ${this.doc.unit === 'inches' ? 'in' : this.doc.unit}`;
     }
+    document.getElementById('statusbar').hidden = !this.doc.showSize;
     document.getElementById('status-text').textContent = status;
     const holder = document.getElementById('style-preview');
     let canvas = holder.querySelector('canvas'); if (!canvas) { canvas = document.createElement('canvas'); canvas.width = 22; canvas.height = 12; holder.append(canvas); }

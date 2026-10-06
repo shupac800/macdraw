@@ -1,5 +1,6 @@
 import { renderShape, getMultiBounds } from '../model/Shape.js';
 import { monochromePixels } from '../util/patterns.js';
+import { textSelectionRects } from '../util/text.js';
 
 export class Renderer {
   constructor(canvas, doc, selection, patternRegistry) {
@@ -76,6 +77,7 @@ export class Renderer {
       const original = this.selectionOverlay?.trackingIds?.includes(obj.id) && this.selectionOverlay.trackingOriginals?.get(obj.id);
       renderShape(ctx, original || obj, this.patternRegistry);
     }
+    if (this.doc._textDraft) renderShape(ctx, this.doc._textDraft.shape, this.patternRegistry);
     // Tracking frames invert the completed background, including objects
     // above the selection, so the pointer feedback cannot be hidden by fills.
     const tracked = (this.selectionOverlay?.trackingIds || []).map(id => this.doc.getObjectById(id)).filter(Boolean);
@@ -98,6 +100,19 @@ export class Renderer {
 
     ctx.restore();
     ctx.putImageData(monochromePixels(ctx.getImageData(0, 0, canvas.width, canvas.height)), 0, 0);
+    // Highlight/caret are integer framebuffer pixels over the same glyphs.
+    // The transparent textarea supplies input and accessibility, never paint.
+    if (this.doc._textDraft) {
+      ctx.save(); ctx.globalCompositeOperation = 'difference'; ctx.fillStyle = '#fff';
+      for (const rect of textSelectionRects(ctx, this.doc._textDraft)) {
+        const x = Math.round(rect.x * this.zoom - this.container.scrollLeft);
+        const y = Math.round(rect.y * this.zoom - this.container.scrollTop);
+        const right = Math.round((rect.x + rect.width) * this.zoom - this.container.scrollLeft);
+        const bottom = Math.round((rect.y + rect.height) * this.zoom - this.container.scrollTop);
+        ctx.fillRect(x, y, rect.caret ? 1 : right - x, bottom - y);
+      }
+      ctx.restore();
+    }
   }
 
   _renderPage(ctx) {

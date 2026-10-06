@@ -1,7 +1,7 @@
 import { createShape } from '../../model/Shape.js';
 import { AddShapeCommand } from '../../commands/AddShapeCommand.js';
 import { DocumentCommand } from '../../commands/DocumentCommand.js';
-import { textLayout } from '../../util/text.js';
+import { textLayout, textOffsetAtPoint } from '../../util/text.js';
 
 export class TextTool {
   constructor() {
@@ -48,6 +48,7 @@ export class TextTool {
     const canvas = this.cursor?.canvas; if (!canvas) return;
     this._editingShape = shape; this._isNew = isNew; this.doc._editingId = shape.id;
     const textarea = document.createElement('textarea'); textarea.className = 'text-editor'; textarea.setAttribute('aria-label', 'Edit drawing text'); textarea.value = shape.text;
+    textarea.spellcheck = false;
     textarea.title = 'Enter: new line. Ctrl+Enter: finish. Escape: cancel.';
     const zoom = this.manager.zoom || 1;
     Object.assign(textarea.style, {
@@ -64,6 +65,41 @@ export class TextTool {
     });
     textarea.wrap = shape.wrap ? 'soft' : 'off'; canvas.parentElement.append(textarea); this._textarea = textarea;
     textarea.addEventListener('input', () => this._resizeEditor());
+    textarea.addEventListener('select', () => this._syncDraft());
+    textarea.addEventListener('keyup', () => this._syncDraft());
+    const offsetAt = event => {
+      const bounds = canvas.getBoundingClientRect(), scale = bounds.width / canvas.clientWidth || 1;
+      const viewport = canvas.closest('#canvas-container');
+      return textOffsetAtPoint(canvas.getContext('2d'), this.doc._textDraft.shape, {
+        x: ((event.clientX - bounds.left) / scale + (viewport?.scrollLeft || 0)) / zoom,
+        y: ((event.clientY - bounds.top) / scale + (viewport?.scrollTop || 0)) / zoom,
+      });
+    };
+    const selectTo = end => {
+      textarea.setSelectionRange(Math.min(this._textAnchor, end), Math.max(this._textAnchor, end), end < this._textAnchor ? 'backward' : 'forward');
+      this._syncDraft();
+    };
+    textarea.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      event.preventDefault(); textarea.focus({ preventScroll: true });
+      const offset = offsetAt(event);
+      this._textAnchor = event.shiftKey ? (textarea.selectionDirection === 'backward' ? textarea.selectionEnd : textarea.selectionStart) : offset;
+      selectTo(offset); this._selectingText = true; textarea.setPointerCapture(event.pointerId);
+    });
+    textarea.addEventListener('pointermove', event => { if (this._selectingText) selectTo(offsetAt(event)); });
+    textarea.addEventListener('pointerup', event => {
+      if (!this._selectingText) return;
+      selectTo(offsetAt(event)); this._selectingText = false;
+      if (textarea.hasPointerCapture(event.pointerId)) textarea.releasePointerCapture(event.pointerId);
+    });
+    textarea.addEventListener('pointercancel', () => { this._selectingText = false; });
+    textarea.addEventListener('dblclick', event => {
+      const offset = offsetAt(event), value = textarea.value;
+      let start = offset, end = offset;
+      while (start && /\S/.test(value[start - 1])) start--;
+      while (end < value.length && /\S/.test(value[end])) end++;
+      this._textAnchor = start; textarea.setSelectionRange(start, end); this._syncDraft();
+    });
     textarea.addEventListener('keydown', e => {
       e.stopPropagation();
       if (e.isComposing) return;
@@ -77,6 +113,10 @@ export class TextTool {
     textarea.addEventListener('blur', () => this.finishEditing());
     this._resizeEditor();
     textarea.focus({ preventScroll: true }); textarea.select(); this.doc._notify('preview');
+    this._syncDraft();
+    this._caretTimer = window.setInterval(() => {
+      if (this.doc._textDraft) { this.doc._textDraft.caret = !this.doc._textDraft.caret; this.doc._notify('preview'); }
+    }, 500);
   }
   _textDimensions(shape, value) {
     const ctx = this.cursor.canvas.getContext('2d');
@@ -94,12 +134,25 @@ export class TextTool {
     // Match the text bounds so the editing frame and side handles share a center.
     textarea.style.height = `${height * zoom}px`;
     textarea.style.transformOrigin = `${width * zoom / 2}px ${height * zoom / 2}px`;
+    this._syncDraft(width, height);
+  }
+  _syncDraft(width, height) {
+    const shape = this._editingShape, textarea = this._textarea;
+    if (!shape || !textarea) return;
+    const zoom = this.manager.zoom || 1;
+    this.doc._textDraft = {
+      shape: { ...shape, text: textarea.value, width: width ?? parseFloat(textarea.style.width) / zoom, height: height ?? parseFloat(textarea.style.height) / zoom },
+      start: textarea.selectionStart, end: textarea.selectionEnd, caret: true,
+    };
+    this.doc._notify('preview');
   }
   finishEditing(cancel = false) {
     if (!this._textarea) return;
     const textarea = this._textarea, shape = this._editingShape, isNew = this._isNew;
     const value = textarea.value;
-    this._textarea = null; this._editingShape = null; this._isNew = false; delete this.doc._editingId;
+    this._textarea = null; this._editingShape = null; this._isNew = false; this._selectingText = false;
+    delete this.doc._editingId; delete this.doc._textDraft;
+    window.clearInterval(this._caretTimer); this._caretTimer = null;
     textarea.remove();
     // Do not write into an object removed or replaced while its draft was open.
     if (!cancel && !isNew && this.doc.getObjectById(shape.id) !== shape) cancel = true;

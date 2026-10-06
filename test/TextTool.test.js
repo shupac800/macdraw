@@ -119,6 +119,21 @@ describe('TextTool editing', () => {
     expect(stack.canUndo).toBe(false);
   });
 
+  it('keeps the draft and character range on the canvas without mutating or saving the original', () => {
+    const shape = addText({ text: 'Bitmap' });
+    const editor = edit(shape, 'Bitmap draft');
+    editor.setSelectionRange(2, 5);
+    editor.dispatchEvent(new window.Event('select'));
+    expect(doc._textDraft).toMatchObject({ shape: { text: 'Bitmap draft' }, start: 2, end: 5 });
+    expect(shape.text).toBe('Bitmap');
+    expect(saveToJSON(doc)).not.toContain('Bitmap draft');
+    tool.finishEditing(true);
+    expect(doc._textDraft).toBeUndefined();
+    expect(doc._editingId).toBeUndefined();
+    expect(tool._caretTimer).toBeNull();
+    expect(stack.canUndo).toBe(false);
+  });
+
   it('prevents default canvas focus from taking focus away from a reopened editor', () => {
     addText();
     new InputHandler(canvas, manager);

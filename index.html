@@ -14,10 +14,10 @@
       <div id="titlebar">
         <button id="close-box" aria-label="Close drawing" title="Close drawing"></button>
         <span id="document-title">Untitled</span>
-        <button id="zoom-box" aria-label="Fit window" title="Fit window"></button>
+        <button id="zoom-box" aria-label="Fit drawing" title="Fit drawing"></button>
       </div>
       <div id="main">
-        <div id="toolbar"></div>
+        <div id="toolbar"><button id="style-preview" aria-label="Current fill and pen" title="Current fill and pen"></button></div>
         <div id="canvas-area">
           <div id="ruler-corner" aria-hidden="true"></div>
           <canvas id="h-ruler"></canvas>
@@ -27,11 +27,9 @@
           </div>
         </div>
       </div>
-      <div id="statusbar">
-        <button id="style-preview" aria-label="Current fill and pen" title="Current fill and pen"></button>
-        <span id="status-text" role="status">Select an object, or choose a drawing tool.</span>
+      <div id="statusbar" hidden>
+        <span id="status-text" role="status"></span>
         <button id="zoom-level" title="Set drawing scale" aria-label="Drawing scale">100%</button>
-        <span class="size-box" aria-hidden="true"></span>
       </div>
     </section>
   </div>
