@@ -11,7 +11,7 @@ describe('SelectTool', () => {
 
   beforeEach(() => {
     resetIdCounter();
-    doc = new Document();
+    doc = new Document({ snapToGrid: false, showRulers: true });
     Document.setShapeModule({ getBounds, hitTest });
     selection = new Selection();
     commandStack = new CommandStack();
@@ -187,7 +187,7 @@ describe('SelectTool', () => {
   });
 
   describe('group resize', () => {
-    it('resizes multiple selected shapes proportionally via SE handle drag', () => {
+    it('resizes a group proportionally via SE handle drag', () => {
       // Two shapes: A at (0,0,100,100) and B at (100,0,100,100)
       // Unified bounds: (0,0,200,100)
       // SE handle at (200,100)
@@ -196,7 +196,8 @@ describe('SelectTool', () => {
       doc.addObject(a);
       doc.addObject(b);
 
-      // Select both
+      // Group members share one boundary.
+      a.groupId = b.groupId = 'resize-group';
       selection.selectMultiple([a.id, b.id]);
 
       // Drag SE handle from (200,100) to (400,200) — double the size
@@ -280,6 +281,7 @@ describe('SelectTool', () => {
       });
       doc.addObject(rect);
       doc.addObject(poly);
+      rect.groupId = poly.groupId = 'resize-group';
       selection.selectMultiple([rect.id, poly.id]);
 
       // Unified bounds: (0,0,100,50), SE at (100,50)

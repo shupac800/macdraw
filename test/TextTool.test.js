@@ -24,7 +24,7 @@ describe('TextTool editing', () => {
     }
     resetIdCounter();
     Document.setShapeModule({ getBounds, hitTest });
-    doc = new Document();
+    doc = new Document({ snapToGrid: false, showRulers: true });
     selection = new Selection();
     stack = new CommandStack();
     canvas = document.querySelector('canvas');
@@ -86,10 +86,10 @@ describe('TextTool editing', () => {
     expect(current(shape).height).toBe(16);
   });
 
-  it('reopens the selected original with its text, styling and transform', () => {
+  it('reopens the selected original with its text and styling', () => {
     const shape = addText({ fontFamily: 'Courier New', fontSize: 20, fontWeight: 'bold',
       fontStyle: 'italic', textDecoration: 'underline', textAlign: 'right',
-      rotation: Math.PI / 4, flipH: true, fill: { color: '#123456' }, groupId: 'group1' });
+      fill: { color: '#123456' } });
     const before = structuredClone(shape);
     const editor = edit(shape, 'Replacement');
     expect(document.activeElement).toBe(editor);
@@ -101,7 +101,7 @@ describe('TextTool editing', () => {
     expect(editor.style.textDecoration).toBe('underline');
     expect(editor.style.textAlign).toBe('right');
     expect(editor.style.color).toBe('rgb(0, 0, 0)');
-    expect(editor.style.transform).toContain('scale(-1, 1)');
+    expect(editor.style.transform).toContain('scale(1, 1)');
     expect(editor.wrap).toBe('off');
     expect(shape).toEqual(before);
     finish(editor);
@@ -257,12 +257,12 @@ describe('TextTool editing', () => {
     expect(tool._textarea).toBeNull();
   });
 
-  it('opens rotated text at its visible bounds, including flips', () => {
+  it('requires restoring orientation before editing rotated and flipped text', () => {
     const shape = addText({ width: 160, height: 24, rotation: Math.PI / 2, flipH: true, flipV: true });
     expect(hitTest(shape, { x: 90, y: 100 })).toBe(true);
     expect(hitTest(shape, { x: 20, y: 30 })).toBe(false);
     manager.onMouseDown({ x: 90, y: 100 }, {});
-    expect(tool._editingShape).toBe(shape);
+    expect(tool._editingShape).toBeNull();
   });
 
   it('does not leak editors when editing starts again or canvas is unavailable', () => {
@@ -304,23 +304,12 @@ describe('TextTool editing', () => {
     expect(doc.objects).toHaveLength(1);
   });
 
-  it('edits grouped text without changing the group or sibling objects', () => {
-    const shape = addText({ groupId: 'group1', rotation: Math.PI / 4, flipV: true });
-    const sibling = createShape('rect', { x: 200, y: 200, width: 50, height: 50, groupId: 'group1' });
-    doc.addObject(sibling);
-    doc.addGroup({ id: 'group1', members: [shape.id, sibling.id] });
-    const before = structuredClone(doc.toJSON());
-    finish(edit(shape, 'Grouped change'));
-    expect(shape.groupId).toBe('group1');
-    expect(shape.rotation).toBe(Math.PI / 4);
-    expect(shape.flipV).toBe(true);
-    expect(sibling).toEqual(before.objects[1]);
-    expect(doc.groups).toEqual(before.groups);
-    stack.undo();
-    expect(doc.toJSON()).toEqual(before);
-    stack.redo();
-    expect(current(shape).text).toBe('Grouped change');
-    expect(doc.groups).toEqual(before.groups);
+  it('requires ungrouping before editing a text child', () => {
+    const shape = addText({ groupId: 'group1' });
+    const before = structuredClone(doc.toJSON()); tool.startEditing(shape);
+    expect(tool._textarea).toBeNull(); expect(doc.toJSON()).toEqual(before); expect(stack.canUndo).toBe(false);
+    const sibling=createShape('rect',{x:200,y:200,width:40,height:40,groupId:'group1'}); doc.addObject(sibling);
+    tool.onMouseDown({x:30,y:30}); expect(selection.ids).toEqual([shape.id,sibling.id]); expect(tool._textarea).toBeNull();
   });
 
   it.each([0.5, 2])('retains wrapping, line spacing and document coordinates at zoom %s', zoom => {
@@ -340,13 +329,11 @@ describe('TextTool editing', () => {
     expect(shape.height).toBeCloseTo(109.2);
   });
 
-  it('keeps locked text immutable without creating a duplicate', () => {
-    const shape = addText({ locked: true });
-    manager.onMouseDown({ x: 30, y: 30 }, {});
-    manager.onMouseUp({ x: 30, y: 30 }, {});
-    expect(tool._textarea).toBeNull();
-    expect(doc.objects).toEqual([shape]);
-    expect(stack.canUndo).toBe(false);
+  it('edits locked text content while keeping its position, dimensions and style', () => {
+    const shape = addText({ locked: true }), before = structuredClone(shape);
+    finish(edit(shape, 'A longer locked caption'));
+    expect(shape).toEqual({ ...before, text:'A longer locked caption' });
+    stack.undo(); expect(current(shape)).toEqual(before);
   });
 
   it('cancels new text and omits new empty drafts without an undo entry', () => {
@@ -391,7 +378,7 @@ describe('TextTool editing', () => {
   });
 
   it('preserves edited multiline text, identity, style, transform and bounds in JSON and SVG', () => {
-    const shape = addText({ rotation: Math.PI / 2, flipV: true, fontWeight: 'bold',
+    const shape = addText({ fontWeight: 'bold',
       fontStyle: 'italic', textDecoration: 'underline', textAlign: 'center', fill: { color: '#123456' } });
     finish(edit(shape, 'Edited <text> & symbols\nSecond line'));
     const jsonShape = loadFromJSON(saveToJSON(doc)).getObjectById(shape.id);

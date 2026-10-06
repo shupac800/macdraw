@@ -1,5 +1,9 @@
 # Macintosh bitmap provenance
 
+The current toolbar and ruler numerals target the user-supplied MacDraw 1.9
+archive. The Chicago and Guided Tour research below records the earlier
+baseline; Chicago 12 is no longer used for normal ruler numerals.
+
 These assets copy bits from Apple Chicago 12, archived as `Chicago-12.bdf` in
 [danfe/fonts](https://github.com/danfe/fonts/blob/1fcfa2e1bcf87b530e66aa8ebedd53e870c816a0/Chicago-12.bdf).
 The source identifies Apple as its foundry and says it was created by Fondu
@@ -17,9 +21,9 @@ Source SHA-256: `c49c1ee835be49493f78de056ecd63f3ce98afb8f6332b82237329431b02845
   advance widths, bounding boxes and hexadecimal bitmap rows. Punctuation and
   exponent characters support negative/fractional custom ruler values.
 
-No glyph was traced, redrawn, thresholded or resampled. Rulers paint each set
-bit at an integer logical pixel, including the counterclockwise vertical
-orientation. The existing MacScreen integer display scaling and pixelated
+No glyph was traced, redrawn, thresholded or resampled. The earlier ruler
+implementation used these Chicago bits and rotated vertical labels. That
+assumption is superseded by the MacDraw 1.9 findings below. The existing MacScreen integer display scaling and pixelated
 canvas/image rendering enlarge these bits with nearest-neighbor sampling.
 The menu bitmap inverts on hover/open to preserve the white-on-black menu state.
 
@@ -52,3 +56,57 @@ Each source bit maps to one transparent or opaque black PNG pixel. The image
 uses nearest-neighbor display scaling, with exact inversion for selection.
 This is original application resource data, not original MacDraw program
 source code. No new license for these historical bits is claimed.
+
+
+## Authoritative MacDraw 1.9 archive
+
+Input: `C:\Users\david\Downloads\macdraw_1_9.zip`.
+ZIP SHA-256: `f5e2b00413b9db69f25fc7166b5cf77230c54e8b820558bced2192edb2dc2d67`.
+The application resource is from `MacDraw800k.dsk`, an HFS disk image. Its
+`MDRW` resource identifies the build as `MacDraw 1.9 5/28/85`. This is compiled
+application/resource data, not MacDraw source. That build date does not prove
+an independent 1988 release date.
+
+- `FONT` 31755, family 248, size 11, SHA-256:
+  `eb2fdd00042a4f7d05370080a6da30e67fe89ca2e67b904751928d5544440662`.
+- `FONT` 31881, family 249, size 9, SHA-256:
+  `54e9467586f5ca3c72d292b1dcc0cd8ab77f268dc615e9eab1af954558a8059f`.
+
+`tool-*.png` contains the ten cropped toolbar glyphs, with transparent unset
+bits and opaque black set bits. `macdraw-1.9-tools.json` records source glyph
+numbers 3 through 12, source crop, advance, bitmap rows and PNG SHA-256. Glyph 4
+is the serif T. Its PNG hash matches the previous 1.9.5 extraction exactly;
+the application does not use an A for this tool. All tools now use original
+resource bits instead of SVG approximations.
+
+Static code evidence: `CODE` 2 at resource-relative offsets `0x3ea8` through
+`0x3ed8` establishes 24x16 cells with 17-pixel vertical pitch. At `0x3f68`
+through `0x3f82` the routine places the glyph four pixels from the cell's left,
+sets its baseline three rows above the bottom, and draws tool index plus 3.
+The shared character routine at `0x67dc` selects family 248, size 11. These
+references describe behavior in our own words; no application code is bundled.
+
+`macdraw-1.9-ruler.json` records original family 249 digits, minus and decimal
+point with advance widths and bitmap rows. Numerals have seven bitmap rows
+and six-pixel advances. The application selects family 249 at size 9 in
+`CODE` 21 at `0x38e` through `0x396`. Its label routine at `0x172` through
+`0x196` uses the measured string width plus one pixel before the tick and draws
+upright text on both axes. The clone retains its existing 20-pixel ruler strip;
+matching every surrounding ruler/window dimension is not established here.
+
+Comparison against `FONT` 393 (Geneva 9) in the System resource fork on this
+same disk: digits 0, 1, 2, 4, 5, 6, 7, 8 and 9 match exactly after cropping
+blank rows; digit 3 differs. Thus the verified identity is MacDraw's custom
+9-point numeral font, with strong Geneva 9 similarity, not Chicago 12. The
+custom numeral resource is byte-identical to the earlier 1.9.5 resource. It
+contains arrow symbols at character positions normally used for '+' and
+other punctuation; those arrow symbols are not treated as arithmetic signs.
+The existing Chicago '+', 'e' and 'E' remain explicit fallbacks only for the
+clone's modern exponent-format/custom-numbering extension.
+
+Extraction is reproducible using our independently authored
+`tools/extract-macdraw-bitmaps.py` with external `FONT-31755.bin` and
+`FONT-31881.bin` payloads. The disk images, forks, executable code, manual and
+Lisa source stay outside this repository. Only the requested MacDraw bitmap
+assets and their metadata are included. No new license for historical Apple
+resource bits is claimed.

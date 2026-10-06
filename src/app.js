@@ -1,7 +1,7 @@
 import { Document } from './model/Document.js';
 import { Selection } from './model/Selection.js';
 import { Clipboard } from './model/Clipboard.js';
-import { getVisualBounds as getBounds, hitTest } from './model/Shape.js';
+import { getVisualBounds as getBounds, getMultiBounds, hitTest } from './model/Shape.js';
 import { CommandStack } from './commands/CommandStack.js';
 import { Renderer } from './view/Renderer.js';
 import { SelectionOverlay } from './view/SelectionOverlay.js';
@@ -84,8 +84,12 @@ export class MacDraw {
   }
   setZoom(value) {
     this.finishText();
+    if (this.toolManager._activeTool?._dragging || this.toolManager._activeTool?._drawing) this.cancelInteraction();
     const viewport = document.getElementById('canvas-container'), old = this.zoom;
-    const cx = (viewport.scrollLeft + viewport.clientWidth / 2) / old, cy = (viewport.scrollTop + viewport.clientHeight / 2) / old;
+    const selected = this.selection.getSelectedObjects(this.doc);
+    const bounds = selected.length ? getMultiBounds(selected) : null;
+    const cx = bounds ? bounds.x + bounds.width / 2 : value === 1 ? this.doc.pageWidth / 2 : (viewport.scrollLeft + viewport.clientWidth / 2) / old;
+    const cy = bounds ? bounds.y + bounds.height / 2 : value === 1 ? this.doc.pageHeight / 2 : (viewport.scrollTop + viewport.clientHeight / 2) / old;
     this.zoom = Math.max(0.125, Math.min(4, value));
     this.renderer.zoom = this.rulerRenderer.zoom = this.selectionOverlay.zoom = this.toolManager.zoom = this.zoom;
     this._handleResize(); viewport.scrollLeft = cx * this.zoom - viewport.clientWidth / 2; viewport.scrollTop = cy * this.zoom - viewport.clientHeight / 2;

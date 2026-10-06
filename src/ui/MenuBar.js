@@ -59,7 +59,7 @@ export class MenuBar {
       { label: 'Layout', items: [
         item(() => d.showRulers ? 'Hide Rulers' : 'Show Rulers', () => a.toggle('showRulers')), item('Custom Rulers…', () => a.rulersDialog()), item(() => d.showRulerLines ? 'Hide Ruler Lines' : 'Show Ruler Lines', () => a.toggle('showRulerLines')), separator,
         item(() => d.snapToGrid ? 'Turn Grid Off' : 'Turn Grid On', () => a.toggle('snapToGrid')), item('Show Alignment Grid', () => a.toggle('showGrid'), null, null, () => d.showGrid), item('Show Size', () => a.toggle('showSize'), null, null, () => d.showSize), separator,
-        item('Actual Size', () => app.setZoom(1), null, 'Ctrl+1'), item('Reduce', () => app.setZoom(app.zoom / 2), () => app.zoom > 0.125), item('Enlarge', () => app.setZoom(app.zoom * 2), () => app.zoom < 4), item('View Entire Drawing', () => app.fitDrawing(), null, 'Ctrl+0'), item('Drawing Size…', () => a.sizeDialog()),
+        item('Normal Size', () => app.setZoom(1), null, 'Ctrl+1'), item('Reduce', () => app.setZoom(app.zoom / 2), () => app.zoom > 0.125), item('Enlarge', () => app.setZoom(app.zoom * 2), () => app.zoom < 4), item('Reduce to Fit', () => app.fitDrawing(), null, 'Ctrl+0'), item('Drawing Size…', () => a.sizeDialog()),
       ] },
       { label: 'Arrange', items: [
         item('Bring to Front', () => a.arrange('front'), has), item('Send to Back', () => a.arrange('back'), has), item('Bring Forward', () => a.arrange('forward'), has), item('Send Backward', () => a.arrange('backward'), has), separator,

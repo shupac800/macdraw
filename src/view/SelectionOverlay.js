@@ -10,19 +10,21 @@ export class SelectionOverlay {
     this.interactionPreview = null; // preview shape during drawing
     this.showRotationHandle = true;
     this.zoom = 1;
+    this.trackingIds = null;
   }
 
   render(ctx) {
-    const selectedObjects = this.selection.getSelectedObjects(this.doc);
-    if (selectedObjects.length === 1) {
-      // Single shape: draw handles on its own bounds
-      this._renderSelectionBox(ctx, getBounds(selectedObjects[0]), selectedObjects[0].type === 'text');
-    } else if (selectedObjects.length > 1) {
-      // Multiple shapes: draw dashed outlines on each, handles on unified bounds
-      for (const obj of selectedObjects) {
-        this._renderMemberOutline(ctx, getBounds(obj));
-      }
-      this._renderSelectionBox(ctx, getMultiBounds(selectedObjects));
+    const selectedObjects = this.selection.getSelectedObjects(this.doc).map(obj => this.trackingOriginals?.get(obj.id) || obj);
+    const units = new Map();
+    for (const obj of selectedObjects) {
+      const key = obj.groupId || obj.id;
+      if (!units.has(key)) units.set(key, []);
+      units.get(key).push(obj);
+    }
+    for (const objects of units.values()) {
+      const shape = objects[0];
+      this._renderSelectionBox(ctx, getMultiBounds(objects), objects.length === 1 && shape.type === 'text',
+        objects.length === 1 && !shape.groupId && shape.type === 'line' ? shape.points : null);
     }
 
     if (this.marquee) {
@@ -40,8 +42,8 @@ export class SelectionOverlay {
   _renderMemberOutline(ctx, bounds) {
     ctx.save();
     ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 1 / this.zoom;
+    ctx.setLineDash([3 / this.zoom, 3 / this.zoom]);
     ctx.strokeRect(bounds.x - 0.5, bounds.y - 0.5, bounds.width + 1, bounds.height + 1);
     ctx.restore();
   }
@@ -49,7 +51,7 @@ export class SelectionOverlay {
   /**
    * Solid outline with resize/rotation handles.
    */
-  _renderSelectionBox(ctx, bounds, text = false) {
+  _renderSelectionBox(ctx, bounds, text = false, endpoints = null) {
     ctx.save();
 
     // Black square handles, as on the monochrome Macintosh.
@@ -58,7 +60,7 @@ export class SelectionOverlay {
     ctx.setLineDash([]);
 
     // Resize handles
-    const handles = getHandlePositions(getSelectionHandleBounds(bounds, this.zoom, text));
+    const handles = endpoints ? Object.fromEntries(endpoints.map((point, index) => [index, point])) : getHandlePositions(getSelectionHandleBounds(bounds, this.zoom, text));
     const transform = ctx.getTransform();
 
     ctx.fillStyle = '#000';
@@ -75,7 +77,7 @@ export class SelectionOverlay {
     }
     ctx.restore();
 
-    if (!this.showRotationHandle) { ctx.restore(); return; }
+    if (!this.showRotationHandle || endpoints) { ctx.restore(); return; }
 
     // Rotation handle
     const topCenter = handles.n;
@@ -136,6 +138,25 @@ export class SelectionOverlay {
       ctx.stroke();
     }
 
+    ctx.restore();
+  }
+
+  renderTrackingBounds(ctx, bounds) {
+    ctx.save(); ctx.globalCompositeOperation = 'difference';
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1 / this.zoom; ctx.setLineDash([]);
+    ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height); ctx.restore();
+  }
+
+  renderTrackingObject(ctx, shape, patternRegistry) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'difference';
+    if (shape.type === 'text') {
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1 / this.zoom;
+      const b = getBounds(shape);
+      ctx.strokeRect(b.x, b.y, b.width, b.height);
+    } else {
+      renderShape(ctx, { ...shape, fill: { type: 'none' }, stroke: { ...shape.stroke, width: Math.max(1 / this.zoom, shape.stroke.width), color: '#fff', patternId: null } }, patternRegistry);
+    }
     ctx.restore();
   }
 }

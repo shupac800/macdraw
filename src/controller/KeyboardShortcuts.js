@@ -1,4 +1,5 @@
 import { TOOLS } from '../util/constants.js';
+import { createShape, getMultiBounds } from '../model/Shape.js';
 
 export class KeyboardShortcuts {
   constructor(app) { this.app = app; this.handler = e => this._onKeyDown(e); window.addEventListener('keydown', this.handler); }
@@ -21,6 +22,16 @@ export class KeyboardShortcuts {
       e.preventDefault(); const n = e.shiftKey ? 10 : 1; app.actions.nudge(key === 'arrowleft' ? -n : key === 'arrowright' ? n : 0, key === 'arrowup' ? -n : key === 'arrowdown' ? n : 0); return;
     }
     if (key === 'escape') { app.finishText(); app.cancelInteraction(); app.selection.clear(); return; }
+    // Original MacDraw turns typing over a selection into paragraph text.
+    if (e.key.length === 1 && !e.isComposing && app.toolManager.getActiveTool() === TOOLS.SELECT && !app.selection.isEmpty) {
+      e.preventDefault();
+      const b = getMultiBounds(app.selection.getSelectedObjects(app.doc));
+      const text = createShape('text', { ...b, width: Math.max(1, b.width), text: e.key, wrap: true, ...app.doc._defaultText });
+      app.toolManager.chooseTool(TOOLS.TEXT);
+      const tool = app.toolManager._tools.text; tool.startEditing(text, true);
+      if (tool._textarea) tool._textarea.setSelectionRange(1, 1);
+      return;
+    }
     const tools = { v: TOOLS.SELECT, t: TOOLS.TEXT, h: TOOLS.PERPENDICULAR, l: TOOLS.LINE, r: TOOLS.RECT, u: TOOLS.ROUND_RECT, o: TOOLS.OVAL, a: TOOLS.ARC, p: TOOLS.POLYGON, f: TOOLS.FREEHAND };
     if (tools[key]) { e.preventDefault(); app.toolManager.chooseTool(tools[key]); }
   }

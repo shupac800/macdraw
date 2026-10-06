@@ -27,6 +27,8 @@ export class ResizeGroupCommand {
       shape.width = snap.width;
       shape.height = snap.height;
       shape.rotation = snap.rotation;
+      if ('flipH' in snap) shape.flipH = snap.flipH;
+      if ('flipV' in snap) shape.flipV = snap.flipV;
       if (snap.points) {
         shape.points = snap.points.map(p => ({ ...p }));
       }

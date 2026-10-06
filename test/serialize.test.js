@@ -74,7 +74,7 @@ describe('JSON serialize', () => {
   });
 
   it('handles empty document', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const json = saveToJSON(doc);
     const restored = loadFromJSON(json);
     expect(restored.objects).toHaveLength(0);
@@ -129,7 +129,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips an oval', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const oval = createShape('oval', { x: 10, y: 20, width: 60, height: 40 });
     doc.addObject(oval);
 
@@ -147,7 +147,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips a roundRect', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const rr = createShape('roundRect', { x: 5, y: 5, width: 80, height: 40, cornerRadius: 10 });
     doc.addObject(rr);
 
@@ -162,7 +162,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips a line with arrows', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const line = createShape('line', {
       points: [{ x: 10, y: 20 }, { x: 100, y: 80 }],
       endArrow: 'arrow',
@@ -183,7 +183,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips an arc', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const arc = createShape('arc', {
       x: 10, y: 10, width: 80, height: 60,
       startAngle: 0, endAngle: Math.PI, arcType: 'pie',
@@ -203,7 +203,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips a closed polygon', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const poly = createShape('polygon', {
       points: [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 25, y: 40 }],
       closed: true,
@@ -223,7 +223,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips a freehand polyline', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const fh = createShape('freehand', {
       points: [{ x: 0, y: 0 }, { x: 10, y: 5 }, { x: 20, y: 0 }],
       closed: false,
@@ -242,7 +242,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips text', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const text = createShape('text', {
       x: 50, y: 100, width: 200, height: 30,
       text: 'Hello\nWorld', fontSize: 18, fontWeight: 'bold',
@@ -285,7 +285,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips stroke dash pattern', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const rect = createShape('rect', { x: 0, y: 0, width: 50, height: 50 });
     rect.stroke.dash = [4, 4];
     doc.addObject(rect);
@@ -299,7 +299,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips rotation', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const rect = createShape('rect', { x: 10, y: 10, width: 100, height: 50 });
     rect.rotation = Math.PI / 4;
     doc.addObject(rect);
@@ -313,7 +313,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips locked state', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const rect = createShape('rect', { x: 0, y: 0, width: 50, height: 50 });
     rect.locked = true;
     doc.addObject(rect);
@@ -327,7 +327,7 @@ describe('SVG serialize', () => {
   });
 
   it('preserves shape IDs', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const rect = createShape('rect', { x: 0, y: 0, width: 50, height: 50 });
     const origId = rect.id;
     doc.addObject(rect);
@@ -339,7 +339,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips empty document', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const svg = saveToSVG(doc);
     resetIdCounter();
     const restored = loadFromSVG(svg);
@@ -353,7 +353,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips pattern fill metadata', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     const rect = createShape('rect', { x: 0, y: 0, width: 50, height: 50 });
     rect.fill = { type: 'pattern', color: '#000000', patternId: 5 };
     doc.addObject(rect);
@@ -368,7 +368,7 @@ describe('SVG serialize', () => {
   });
 
   it('round-trips multiple shapes in order', () => {
-    const doc = new Document();
+    const doc = new Document({ snapToGrid: false, showRulers: true });
     doc.addObject(createShape('rect', { x: 0, y: 0, width: 10, height: 10 }));
     doc.addObject(createShape('oval', { x: 20, y: 20, width: 30, height: 30 }));
     doc.addObject(createShape('line', { points: [{ x: 0, y: 0 }, { x: 50, y: 50 }] }));

@@ -1,4 +1,4 @@
-import { renderShape } from '../model/Shape.js';
+import { renderShape, getMultiBounds } from '../model/Shape.js';
 import { monochromePixels } from '../util/patterns.js';
 
 export class Renderer {
@@ -72,7 +72,23 @@ export class Renderer {
 
     // Draw all objects
     for (const obj of this.doc.objects) {
-      if (obj.id !== this.doc._editingId) renderShape(ctx, obj, this.patternRegistry);
+      if (obj.id === this.doc._editingId) continue;
+      const original = this.selectionOverlay?.trackingIds?.includes(obj.id) && this.selectionOverlay.trackingOriginals?.get(obj.id);
+      renderShape(ctx, original || obj, this.patternRegistry);
+    }
+    // Tracking frames invert the completed background, including objects
+    // above the selection, so the pointer feedback cannot be hidden by fills.
+    const tracked = (this.selectionOverlay?.trackingIds || []).map(id => this.doc.getObjectById(id)).filter(Boolean);
+    if (this.selectionOverlay?.trackingOutlines) {
+      tracked.forEach(obj => this.selectionOverlay.renderTrackingObject(ctx, obj, this.patternRegistry));
+    } else {
+      const units = new Map();
+      for (const obj of tracked) {
+        const key = obj.groupId || obj.id;
+        if (!units.has(key)) units.set(key, []);
+        units.get(key).push(obj);
+      }
+      for (const objects of units.values()) this.selectionOverlay.renderTrackingBounds(ctx, getMultiBounds(objects));
     }
 
     // Draw selection overlay

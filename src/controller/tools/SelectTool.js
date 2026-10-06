@@ -1,9 +1,8 @@
 import { getVisualBounds as getBounds, getMultiBounds } from '../../model/Shape.js';
-import { getHandleAtPoint, getSelectionHandleBounds, normalizeRect, rotatePoint } from '../../util/geometry.js';
+import { getHandleAtPoint, getSelectionHandleBounds, normalizeRect, rotatePoint, boundingBox } from '../../util/geometry.js';
 import { HANDLE_SIZE, ROTATION_HANDLE_DISTANCE, TOOLS } from '../../util/constants.js';
 import { MoveCommand } from '../../commands/MoveCommand.js';
 import { ResizeGroupCommand } from '../../commands/ResizeGroupCommand.js';
-import { TransformCommand } from '../../commands/TransformCommand.js';
 
 export class SelectTool {
   constructor() {
@@ -27,16 +26,37 @@ export class SelectTool {
     this.cursor?.setDefault();
   }
 
-  deactivate() {
-    if (this._dragging && this._startSnapshots) this._restoreSnapshots(this._startSnapshots);
-    this._dragging = false;
-    this._mode = null;
-    if (this.overlay) this.overlay.marquee = null;
+  _isMovable(shape) {
+    return !!shape && !shape.locked && (!shape.groupId || this.doc.getGroupMembers(shape.groupId).every(member => !member.locked));
   }
 
-  onMouseDown(point, modifiers) {
+  deactivate() {
+    if (this._dragging && this._startSnapshots) this._restoreSnapshots(this._startSnapshots);
+    if (this._mode === 'marquee' && this._selectionBefore) this.selection.selectMultiple(this._selectionBefore);
+    this._dragging = false;
+    this._mode = null;
+    this._startSnapshots = null;
+    if (this.overlay) { this.overlay.marquee = null; this.overlay.trackingIds = null; this.overlay.trackingOriginals = null; }
+    this.doc?._notify('preview');
+  }
+
+  onMouseDown(point, modifiers = {}) {
     this._startPoint = { ...point };
     this._lastPoint = { ...point };
+    this._startSnapshots = null;
+    this._resizeIds = null;
+    this._selectionBefore = [...this.selection.ids];
+    this._marqueeShift = !!modifiers.shiftKey;
+    this._trackingStarted = false;
+    this._originalObjects = new Map(this.doc.objects.map(s => [s.id, structuredClone(s)]));
+
+    // Shift starts a selection gesture even over an existing object. A short
+    // gesture toggles the top hit; a dragged frame toggles enclosed units.
+    if (modifiers.shiftKey) {
+      this._dragging = true;
+      this._mode = 'marquee';
+      return;
+    }
 
     // Check handles on unified selection bounds (skip when shift is held)
     if (!this.selection.isEmpty && !modifiers.shiftKey) {
@@ -48,7 +68,7 @@ export class SelectTool {
       // Check rotation handle
       const rotX = unifiedBounds.x + unifiedBounds.width / 2;
       const rotY = unifiedBounds.y - ROTATION_HANDLE_DISTANCE;
-      if (this.overlay?.showRotationHandle !== false && Math.abs(point.x - rotX) < 8 && Math.abs(point.y - rotY) < 8) {
+      if (selectedShapes.every(s => !s.locked) && this.overlay?.showRotationHandle !== false && Math.abs(point.x - rotX) < 8 && Math.abs(point.y - rotY) < 8) {
         this._dragging = true;
         this._mode = 'rotate';
         this._startBounds = { ...unifiedBounds };
@@ -57,29 +77,22 @@ export class SelectTool {
         return;
       }
 
-      const zoom = this.manager?.zoom || 1;
-      const handleBounds = getSelectionHandleBounds(unifiedBounds, zoom, selectedShapes.length === 1 && selectedShapes[0].type === 'text');
-      const handle = getHandleAtPoint(point, handleBounds, Math.max(HANDLE_SIZE, 7) / zoom);
-      if (handle && selectedShapes.every(s => !s.locked)) {
-        this._dragging = true;
-        this._mode = 'resize';
-        this._handle = handle;
-        this._startBounds = { ...unifiedBounds };
-        this._startSnapshots = this._snapshotShapes(selectedShapes);
-        this.cursor?.setForHandle(handle);
-        return;
+      const hit = this._handleHit(point);
+      if (hit) {
+        this._dragging = true; this._mode = 'resize'; this._handle = hit.handle;
+        this._resizeIds = hit.objects.map(s => s.id);
+        this._startBounds = getMultiBounds(hit.objects);
+        this._startSnapshots = this._snapshotShapes(hit.objects);
+        this.cursor?.setForHandle(hit.handle); return;
       }
     }
 
     // Check if clicking on a shape
-    const clickedShape = this.doc.getObjectAtPoint(point);
+    const clickedShape = this.doc.getObjectAtPoint(point, 5 / (this.manager?.zoom || 1));
 
     if (clickedShape) {
       const members = clickedShape.groupId ? this.doc.getGroupMembers(clickedShape.groupId) : [clickedShape];
-      if (modifiers.shiftKey) {
-        const remove = members.every(m => this.selection.has(m.id));
-        members.forEach(m => remove ? this.selection.deselect(m.id) : this.selection.add(m.id));
-      } else if (!this.selection.has(clickedShape.id)) {
+      if (!this.selection.has(clickedShape.id)) {
         this.selection.selectMultiple(members.map(m => m.id));
       }
 
@@ -90,6 +103,8 @@ export class SelectTool {
           if (!this.selection.has(member.id)) this.selection.add(member.id);
         }
       }
+
+      if (members.some(m => m.locked)) return;
 
       this._dragging = true;
       this._mode = 'move';
@@ -112,17 +127,41 @@ export class SelectTool {
       return;
     }
 
+    // A few native drawing pixels of hand jitter are still a click.
+    if (!this._trackingStarted) {
+      const zoom = this.manager?.zoom || 1;
+      if (Math.abs(point.x - this._startPoint.x) * zoom < 2 && Math.abs(point.y - this._startPoint.y) * zoom < 2) return;
+      this._trackingStarted = true;
+    }
+
     switch (this._mode) {
       case 'move':
         this._restoreSnapshots(this._startSnapshots);
         let dx = point.x - this._startPoint.x, dy = point.y - this._startPoint.y;
-        if (modifiers?.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
-        if (this.doc.snapToGrid) {
-          const b = getMultiBounds(this._startSnapshots);
-          dx = Math.round((b.x + dx) / this.doc.gridSize) * this.doc.gridSize - b.x;
-          dy = Math.round((b.y + dy) / this.doc.gridSize) * this.doc.gridSize - b.y;
+        if (modifiers?.shiftKey) {
+          const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4;
+          const distance = dx * Math.cos(angle) + dy * Math.sin(angle);
+          dx = distance * Math.cos(angle); dy = distance * Math.sin(angle);
+          if (Math.abs(dx) < 1e-8) dx = 0; if (Math.abs(dy) < 1e-8) dy = 0;
         }
+        if (this.doc.snapToGrid) {
+          const shapes = this.selection.getSelectedObjects(this.doc);
+          const step = this.doc.gridSize / (shapes.every(s => s.type === 'text' && !s.groupId) ? 2 : 1);
+          const origin = this.doc.rulerOrigin;
+          const b = getMultiBounds(this._startSnapshots.filter(s => this._isMovable(this.doc.getObjectById(s.id))));
+          const delta = (start, distance, zero) => zero + Math.round((start + distance - zero) / step) * step - start;
+          dx = modifiers?.shiftKey && dx === 0 ? 0 : delta(b.x, dx, origin.x);
+          dy = modifiers?.shiftKey && dy === 0 ? 0 : delta(b.y, dy, origin.y);
+        }
+        const b = getMultiBounds(this._startSnapshots.filter(s => this._isMovable(this.doc.getObjectById(s.id))));
+        dx = Math.max(Math.min(0, -b.x), Math.min(Math.max(0, this.doc.pageWidth - b.x - b.width), dx));
+        dy = Math.max(Math.min(0, -b.y), Math.min(Math.max(0, this.doc.pageHeight - b.y - b.height), dy));
         this._moveDelta = { x: dx, y: dy };
+        if (this.overlay) {
+          this.overlay.trackingIds = this.selection.ids.filter(id => this._isMovable(this.doc.getObjectById(id)));
+          this.overlay.trackingOriginals = this._originalObjects;
+          this.overlay.trackingOutlines = !!modifiers?.altKey;
+        }
         this._handleMove(dx, dy);
         break;
       case 'resize':
@@ -139,48 +178,47 @@ export class SelectTool {
     this._lastPoint = { ...point };
   }
 
-  onMouseUp(point, modifiers) {
+  onMouseUp(point, modifiers = {}) {
     if (!this._dragging) return;
-
-    const totalDx = point.x - this._startPoint.x;
-    const totalDy = point.y - this._startPoint.y;
 
     switch (this._mode) {
       case 'move':
         this.onMouseMove(point, modifiers);
-        if (Math.abs(this._moveDelta.x) > 0.5 || Math.abs(this._moveDelta.y) > 0.5) {
+        if (this._moveDelta.x !== 0 || this._moveDelta.y !== 0) {
           this._restoreSnapshots(this._startSnapshots);
-          const cmd = new MoveCommand(this.doc, this.selection.ids.filter(id => !this.doc.getObjectById(id)?.locked), this._moveDelta.x, this._moveDelta.y);
+          const cmd = new MoveCommand(this.doc, this.selection.ids.filter(id => this._isMovable(this.doc.getObjectById(id))), this._moveDelta.x, this._moveDelta.y);
           this.commandStack.execute(cmd);
         }
         break;
 
       case 'resize':
-        this._handleResize(point, modifiers);
+        this.onMouseMove(point, modifiers);
         if (this._startSnapshots) {
           // Capture current state as the "new" state
-          const selectedShapes = this.selection.getSelectedObjects(this.doc);
+          const selectedShapes = this._resizeIds ? this._resizeIds.map(id => this.doc.getObjectById(id)) : this.selection.getSelectedObjects(this.doc);
           const newSnapshots = this._snapshotShapes(selectedShapes);
           // Revert to start state
           this._restoreSnapshots(this._startSnapshots);
           // Execute command that goes from start → new
           const cmd = new ResizeGroupCommand(this.doc, this._startSnapshots, newSnapshots);
-          this.commandStack.execute(cmd);
+          if (JSON.stringify(this._startSnapshots) !== JSON.stringify(newSnapshots)) this.commandStack.execute(cmd);
         }
         break;
 
       case 'marquee':
+        this.onMouseMove(point, modifiers);
         this._finishMarquee(point, modifiers);
         break;
 
       case 'rotate':
+        this.onMouseMove(point, modifiers);
         if (this._startSnapshots) {
-          const selectedShapes = this.selection.getSelectedObjects(this.doc);
+          const selectedShapes = this._resizeIds ? this._resizeIds.map(id => this.doc.getObjectById(id)) : this.selection.getSelectedObjects(this.doc);
           const newSnapshots = this._snapshotShapes(selectedShapes);
           this._restoreSnapshots(this._startSnapshots);
           const cmd = new ResizeGroupCommand(this.doc, this._startSnapshots, newSnapshots);
           cmd.label = 'Rotate';
-          this.commandStack.execute(cmd);
+          if (JSON.stringify(this._startSnapshots) !== JSON.stringify(newSnapshots)) this.commandStack.execute(cmd);
         }
         break;
     }
@@ -191,14 +229,14 @@ export class SelectTool {
     this._startBounds = null;
     this._startSnapshots = null;
     this._startRotation = undefined;
-    if (this.overlay) this.overlay.marquee = null;
+    if (this.overlay) { this.overlay.marquee = null; this.overlay.trackingIds = null; this.overlay.trackingOriginals = null; }
     this.cursor?.setDefault();
     this.doc._notify('change');
   }
 
   onDoubleClick(point, modifiers) {
     const shape = this.doc.getObjectAtPoint(point);
-    if (shape?.type === 'text') {
+    if (shape?.type === 'text' && !shape.groupId && !shape.rotation && !shape.flipH && !shape.flipV) {
       this.selection.select(shape.id);
       this.manager.setActiveTool(TOOLS.TEXT);
       const textTool = this.manager._tools[TOOLS.TEXT];
@@ -213,7 +251,7 @@ export class SelectTool {
   _handleMove(dx, dy) {
     for (const id of this.selection.ids) {
       const shape = this.doc.getObjectById(id);
-      if (!shape || shape.locked) continue;
+      if (!this._isMovable(shape)) continue;
 
       if (shape.points) {
         shape.points = shape.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
@@ -240,11 +278,35 @@ export class SelectTool {
   // ─── Resize ─────────────────────────────────────────────
 
   _handleResize(point, modifiers) {
+    if (this._handle === 'p0' || this._handle === 'p1') {
+      const shape = this.doc.getObjectById(this._resizeIds[0]), index = Number(this._handle[1]);
+      this._restoreSnapshots(this._startSnapshots);
+      let endpoint = { ...point };
+      if (modifiers?.shiftKey) {
+        const fixed = shape.points[1 - index], dx = point.x - fixed.x, dy = point.y - fixed.y;
+        const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4;
+        const distance = dx * Math.cos(angle) + dy * Math.sin(angle);
+        endpoint = { x: fixed.x + distance * Math.cos(angle), y: fixed.y + distance * Math.sin(angle) };
+      }
+      if (this.doc.snapToGrid) for (const axis of ['x','y']) endpoint[axis] = this.doc.rulerOrigin[axis] + Math.round((endpoint[axis] - this.doc.rulerOrigin[axis]) / this.doc.gridSize) * this.doc.gridSize;
+      endpoint.x = Math.max(0, Math.min(this.doc.pageWidth, endpoint.x));
+      endpoint.y = Math.max(0, Math.min(this.doc.pageHeight, endpoint.y));
+      shape.points[index] = endpoint; Object.assign(shape, boundingBox(shape.points));
+      if (this.overlay) { this.overlay.trackingIds = this._resizeIds; this.overlay.trackingOriginals = this._originalObjects; this.overlay.trackingOutlines = true; }
+      this.doc._notify('resize'); return;
+    }
     const sb = this._startBounds;
     let { x, y, width, height } = sb;
 
-    const dx = point.x - this._startPoint.x;
-    const dy = point.y - this._startPoint.y;
+    let dx = point.x - this._startPoint.x;
+    let dy = point.y - this._startPoint.y;
+    if (this.doc.snapToGrid) {
+      const snap = (value, origin) => origin + Math.round((value - origin) / this.doc.gridSize) * this.doc.gridSize;
+      const edgeX = this._handle.includes('w') ? sb.x : sb.x + sb.width;
+      const edgeY = this._handle.includes('n') ? sb.y : sb.y + sb.height;
+      dx = snap(edgeX + dx, this.doc.rulerOrigin.x) - edgeX;
+      dy = snap(edgeY + dy, this.doc.rulerOrigin.y) - edgeY;
+    }
 
     switch (this._handle) {
       case 'se': width += dx; height += dy; break;
@@ -257,23 +319,32 @@ export class SelectTool {
       case 'w': x += dx; width -= dx; break;
     }
 
+    const clampX = value => Math.max(0, Math.min(this.doc.pageWidth, value));
+    const clampY = value => Math.max(0, Math.min(this.doc.pageHeight, value));
+    if (this._handle.includes('w')) { x = clampX(x); width = sb.x + sb.width - x; }
+    if (this._handle.includes('e')) width = clampX(x + width) - sb.x;
+    if (this._handle.includes('n')) { y = clampY(y); height = sb.y + sb.height - y; }
+    if (this._handle.includes('s')) height = clampY(y + height) - sb.y;
+
     // Constrain to proportional if shift held
-    if (modifiers.shiftKey && ['se', 'nw', 'ne', 'sw'].includes(this._handle)) {
+    if (modifiers?.shiftKey && sb.width && sb.height && ['se', 'nw', 'ne', 'sw'].includes(this._handle)) {
       const aspect = sb.width / sb.height;
       if (Math.abs(width) / aspect < Math.abs(height)) {
         height = Math.sign(height) * Math.abs(width) / aspect;
       } else {
         width = Math.sign(width) * Math.abs(height) * aspect;
       }
+      // Keep the opposite corner still after adjusting either dimension.
+      if (this._handle.includes('w')) x = sb.x + sb.width - width;
+      if (this._handle.includes('n')) y = sb.y + sb.height - height;
     }
 
     const newBounds = { x, y, width, height };
-    const normalized = normalizeRect(x, y, width, height);
-    Object.assign(newBounds, normalized);
 
     // Restore from snapshots and proportionally map every shape
     this._restoreSnapshots(this._startSnapshots);
     this._mapAllShapes(sb, newBounds);
+    if (this.overlay) { this.overlay.trackingIds = [...this._resizeIds]; this.overlay.trackingOriginals = this._originalObjects; this.overlay.trackingOutlines = true; }
     this.doc._notify('resize');
   }
 
@@ -281,7 +352,7 @@ export class SelectTool {
    * Proportionally map all selected shapes from oldGroup bounds to newGroup bounds.
    */
   _mapAllShapes(oldGroup, newGroup) {
-    for (const id of this.selection.ids) {
+    for (const id of this._resizeIds || this.selection.ids) {
       const shape = this.doc.getObjectById(id);
       if (!shape) continue;
 
@@ -316,12 +387,12 @@ export class SelectTool {
           x: oldGroup.width ? newGroup.x + ((p.x - oldGroup.x) / oldGroup.width) * newGroup.width : newGroup.x,
           y: oldGroup.height ? newGroup.y + ((p.y - oldGroup.y) / oldGroup.height) * newGroup.height : newGroup.y,
         }));
+        Object.assign(shape, boundingBox(shape.points));
+      } else {
+        Object.assign(shape, normalizeRect(nx, ny, nw, nh));
+        if (nw < 0) shape.flipH = !shape.flipH;
+        if (nh < 0) shape.flipV = !shape.flipV;
       }
-
-      shape.x = nx;
-      shape.y = ny;
-      shape.width = nw;
-      shape.height = nh;
     }
   }
 
@@ -394,24 +465,22 @@ export class SelectTool {
       point.y - this._startPoint.y
     );
 
-    if (rect.width < 2 && rect.height < 2) return;
-
-    const hits = this.doc.objects.filter(obj => {
-      const b = getBounds(obj);
-      return (
-        b.x >= rect.x &&
-        b.y >= rect.y &&
-        b.x + b.width <= rect.x + rect.width &&
-        b.y + b.height <= rect.y + rect.height
-      );
-    });
-
-    const groupIds = new Set(hits.map(h => h.groupId).filter(Boolean));
-    for (const gid of groupIds) for (const member of this.doc.getGroupMembers(gid)) if (!hits.includes(member)) hits.push(member);
-    if (modifiers.shiftKey) {
-      for (const obj of hits) {
-        this.selection.add(obj.id);
+    let hits;
+    if (!this._trackingStarted) {
+      const hit = this.doc.getObjectAtPoint(this._startPoint, 5 / (this.manager?.zoom || 1));
+      hits = hit ? (hit.groupId ? this.doc.getGroupMembers(hit.groupId) : [hit]) : [];
+    } else {
+      hits = this.doc.getObjectsInRect(rect);
+    }
+    if (this._marqueeShift) {
+      const ids = new Set(this._selectionBefore);
+      const units = new Map();
+      for (const hit of hits) units.set(hit.groupId || hit.id, hit.groupId ? this.doc.getGroupMembers(hit.groupId) : [hit]);
+      for (const members of units.values()) {
+        const remove = members.every(m => ids.has(m.id));
+        members.forEach(m => remove ? ids.delete(m.id) : ids.add(m.id));
       }
+      this.selection.selectMultiple(this.doc.objects.filter(s => ids.has(s.id)).map(s => s.id));
     } else {
       this.selection.selectMultiple(hits.map(h => h.id));
     }
@@ -419,23 +488,34 @@ export class SelectTool {
 
   // ─── Cursor ─────────────────────────────────────────────
 
-  _updateHoverCursor(point) {
-    if (!this.selection.isEmpty) {
-      // Check handles on the unified selection bounds
-      const selectedShapes = this.selection.getSelectedObjects(this.doc);
-      const unifiedBounds = selectedShapes.length === 1
-        ? getBounds(selectedShapes[0])
-        : getMultiBounds(selectedShapes);
-      const zoom = this.manager?.zoom || 1;
-      const handleBounds = getSelectionHandleBounds(unifiedBounds, zoom, selectedShapes.length === 1 && selectedShapes[0].type === 'text');
-      const handle = selectedShapes.every(s => !s.locked) && getHandleAtPoint(point, handleBounds, Math.max(HANDLE_SIZE, 7) / zoom);
-      if (handle) {
-        this.cursor?.setForHandle(handle);
-        return;
+  _handleHit(point) {
+    const zoom = this.manager?.zoom || 1, tolerance = Math.max(HANDLE_SIZE, 7) / zoom;
+    const units = new Map();
+    for (const shape of this.selection.getSelectedObjects(this.doc)) {
+      const key = shape.groupId || shape.id;
+      if (!units.has(key)) units.set(key, []);
+      units.get(key).push(shape);
+    }
+    for (const objects of [...units.values()].reverse()) {
+      if (!objects.every(s => this._isMovable(s))) continue;
+      const shape = objects[0];
+      if (objects.length === 1 && !shape.groupId && shape.type === 'line') {
+        const index = shape.points.findIndex(p => Math.abs(p.x - point.x) <= tolerance / 2 && Math.abs(p.y - point.y) <= tolerance / 2);
+        if (index >= 0) return { objects, handle: `p${index}` };
+      } else {
+        const bounds = getSelectionHandleBounds(getMultiBounds(objects), zoom, objects.length === 1 && shape.type === 'text');
+        const handle = getHandleAtPoint(point, bounds, tolerance);
+        if (handle) return { objects, handle };
       }
     }
+    return null;
+  }
 
-    const hit = this.doc.getObjectAtPoint(point);
+  _updateHoverCursor(point) {
+    const handle = this._handleHit(point);
+    if (handle) { this.cursor?.setForHandle(handle.handle); return; }
+
+    const hit = this.doc.getObjectAtPoint(point, 5 / (this.manager?.zoom || 1));
     if (hit) {
       this.cursor?.setMove();
     } else {
@@ -456,6 +536,8 @@ export class SelectTool {
       width: s.width,
       height: s.height,
       rotation: s.rotation,
+      flipH: s.flipH,
+      flipV: s.flipV,
       points: s.points ? s.points.map(p => ({ ...p })) : null,
     }));
   }
@@ -472,6 +554,8 @@ export class SelectTool {
       shape.width = snap.width;
       shape.height = snap.height;
       shape.rotation = snap.rotation;
+      shape.flipH = snap.flipH;
+      shape.flipV = snap.flipV;
       if (snap.points) {
         shape.points = snap.points.map(p => ({ ...p }));
       }

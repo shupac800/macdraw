@@ -16,7 +16,7 @@ describe('Commands', () => {
 
   beforeEach(() => {
     resetIdCounter();
-    doc = new Document();
+    doc = new Document({ snapToGrid: false, showRulers: true });
     Document.setShapeModule({ getBounds, hitTest });
   });
 

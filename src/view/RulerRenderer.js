@@ -29,20 +29,21 @@ export class RulerRenderer {
     const end = Math.ceil(((scroll + length) / this.zoom - origin) / minor);
     // Skip minor ticks when reduced far enough that they would merge.
     const step = Math.max(1, Math.ceil(3 / (minor * this.zoom)));
-    // Sampling bounds work for very fine custom units without enormous loops.
-    for (let i = Math.ceil(start / step) * step; i <= end; i += step) {
-      const isMajor = i % divisions === 0;
-      if (!isMajor && i % step) continue;
+    const tickAt = (i, tick) => {
       const p = Math.round((i * minor + origin) * this.zoom - scroll) + 0.5;
-      const tick = isMajor ? 9 : i % (divisions / 2) === 0 ? 6 : 3;
       ctx.beginPath();
-      if (horizontal) { ctx.moveTo(p, 20 - tick); ctx.lineTo(p, 20); }
-      else { ctx.moveTo(20 - tick, p); ctx.lineTo(20, p); }
-      ctx.stroke();
-      if (isMajor && Math.abs(i) > 0) {
-        const value = String(i / divisions * this.doc.rulerIncrement);
-        drawRulerNumber(ctx, value, p - 0.5, horizontal);
-      }
+      if (horizontal) { ctx.moveTo(p, RULER_SIZE - tick); ctx.lineTo(p, RULER_SIZE); }
+      else { ctx.moveTo(RULER_SIZE - tick, p); ctx.lineTo(RULER_SIZE, p); }
+      ctx.stroke(); return p - 0.5;
+    };
+    for (let i = Math.ceil(start / step) * step; i <= end; i += step) {
+      if (i % divisions !== 0) tickAt(i, i % (divisions / 2) === 0 ? 6 : 3);
+    }
+    // Sampling minor ticks must not discard major ticks or their numerals.
+    const majorStep = Math.max(1, Math.ceil(12 / (major * this.zoom)));
+    for (let n = Math.ceil(start / divisions / majorStep) * majorStep; n <= end / divisions; n += majorStep) {
+      const p = tickAt(n * divisions, 9);
+      if (n !== 0) drawRulerNumber(ctx, String(n * this.doc.rulerIncrement), p, horizontal);
     }
     const pointer = (horizontal ? this.mousePos.x : this.mousePos.y) * this.zoom - scroll;
     if (pointer >= 0 && pointer <= length) {

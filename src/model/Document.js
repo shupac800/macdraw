@@ -1,5 +1,5 @@
 import { DEFAULT_PAGE, DEFAULT_STROKE, DEFAULT_FILL, FONTS } from '../util/constants.js';
-import { resetIdCounter } from './Shape.js';
+import { resetIdCounter, getVisualBounds, getMultiBounds } from './Shape.js';
 
 export class Document {
   constructor(options = {}) {
@@ -9,11 +9,11 @@ export class Document {
     this.objects = [];
     this.groups = [];
     this._listeners = [];
-    this.snapToGrid = false;
+    this.snapToGrid = options.snapToGrid ?? true;
     this.gridSize = 9;
     this.name = 'Untitled';
     this.showGrid = false;
-    this.showRulers = true;
+    this.showRulers = options.showRulers ?? false;
     this.showRulerLines = true;
     this.showSize = false;
     this.rulerOrigin = { x: 0, y: 0 };
@@ -45,9 +45,8 @@ export class Document {
   }
 
   getObjectsInRect(rect) {
-    const { getBounds } = require_getBounds();
     return this.objects.filter(obj => {
-      const b = getBounds(obj);
+      const b = obj.groupId ? getMultiBounds(this.getGroupMembers(obj.groupId)) : getVisualBounds(obj);
       return (
         b.x >= rect.x &&
         b.y >= rect.y &&

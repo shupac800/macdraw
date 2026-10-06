@@ -17,8 +17,9 @@ export class TextTool {
     this.finishEditing();
     const hit = this.doc.getObjectAtPoint(point);
     if (hit?.type === 'text') {
+      if (hit.groupId) { this.selection.selectMultiple(this.doc.getGroupMembers(hit.groupId).map(s => s.id)); return; }
       this.selection.select(hit.id);
-      if (!hit.locked) this.startEditing(hit);
+      this.startEditing(hit);
       return;
     }
     // Finish on click-away without turning that same click into a new object.
@@ -38,7 +39,7 @@ export class TextTool {
     this.startEditing(shape, true);
   }
   startEditing(shape, isNew = false) {
-    if (shape.locked) return;
+    if (shape.groupId || shape.rotation || shape.flipH || shape.flipV) return;
     if (this._editingShape === shape && this._textarea) {
       this._textarea.focus({ preventScroll: true });
       return;
@@ -87,7 +88,7 @@ export class TextTool {
   _resizeEditor() {
     const shape = this._editingShape, textarea = this._textarea;
     const zoom = this.manager.zoom || 1;
-    const { width, height } = textarea.value !== shape.text && textarea.value.trim()
+    const { width, height } = !shape.locked && textarea.value !== shape.text && textarea.value.trim()
       ? this._textDimensions(shape, textarea.value) : shape;
     textarea.style.width = `${width * zoom}px`;
     // Match the text bounds so the editing frame and side handles share a center.
@@ -105,7 +106,7 @@ export class TextTool {
     if (!cancel && value.trim() && (isNew || value !== shape.text)) {
       const { width, height } = this._textDimensions(shape, value);
       if (isNew) { Object.assign(shape, { text: value, width, height }); this.commandStack.execute(new AddShapeCommand(this.doc, shape)); }
-      else this.commandStack.execute(new DocumentCommand(this.doc, 'Edit Text', () => Object.assign(shape, { text: value, width, height })));
+      else this.commandStack.execute(new DocumentCommand(this.doc, 'Edit Text', () => Object.assign(shape, shape.locked ? { text: value } : { text: value, width, height })));
       this.selection.select(shape.id);
     } else if (!cancel && !isNew && value !== shape.text) this.commandStack.execute(new DocumentCommand(this.doc, 'Edit Text', () => { shape.text = value; }));
     this.doc._notify('preview');
