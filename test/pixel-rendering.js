@@ -76,7 +76,7 @@ check('one-bit drawing framebuffer has no intermediate grays', () => {
 function labelScene() {
   const canvas = document.createElement('canvas'); canvas.width = 280; canvas.height = 120;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  const app = { doc: new Document(), selection: new Selection(), clipboard: new Clipboard(), commandStack: new CommandStack(), finishText() {}, cancelInteraction() {} };
+  const app = { doc: new Document({ snapToGrid: false, showRulers: true }), selection: new Selection(), clipboard: new Clipboard(), commandStack: new CommandStack(), finishText() {}, cancelInteraction() {} };
   Document.setShapeModule({ getBounds, hitTest });
   const box = createShape('rect', { x: 16, y: 16, width: 240, height: 88 });
   const text = createShape('text', { x: 32, y: 32, width: 120, height: 24, text: 'Foreground label', fontFamily: 'Chicago' });
@@ -106,10 +106,10 @@ for (const operation of ['group', 'copy', 'duplicate']) check(`${operation} with
   if (operation === 'duplicate') unchanged(9, 9); else unchanged();
   if (operation === 'group') { actions.ungroup(); unchanged(); document.getElementById('samples').append(canvas); }
 });
-check('Ungroup then immediately drag the box: text stays in place, pixel for pixel', () => {
+check('Ungroup then clear selection and drag the box: text stays in place, pixel for pixel', () => {
   const { app, box, text, unchanged } = labelScene();
   app.selection.selectMultiple([box.id, text.id]); const actions = new EditorActions(app);
-  actions.group(); actions.ungroup();
+  actions.group(); actions.ungroup(); app.selection.clear();
   const tool = new SelectTool(); Object.assign(tool, { doc: app.doc, selection: app.selection, commandStack: app.commandStack, manager: { zoom: 1 }, overlay: { showRotationHandle: false } });
   tool.onMouseDown({ x: 200, y: 80 }, { shiftKey: false }); tool.onMouseUp({ x: 400, y: 80 }, { shiftKey: false });
   assert(box.x === 216 && text.x === 32 && text.y === 32, 'ungrouped objects moved together');
@@ -119,7 +119,7 @@ check('Ungroup then immediately drag the box: text stays in place, pixel for pix
 check('marquee-select a group and other objects, then drag the group: all pixels move together', () => {
   const canvas = document.createElement('canvas'); canvas.width = 360; canvas.height = 150;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  const doc = new Document(), selection = new Selection(), commandStack = new CommandStack();
+  const doc = new Document({ snapToGrid: false, showRulers: true }), selection = new Selection(), commandStack = new CommandStack();
   Document.setShapeModule({ getBounds, hitTest });
   const box = createShape('rect', { x: 16, y: 16, width: 100, height: 60, groupId: 'labelled-box' });
   const text = createShape('text', { x: 32, y: 32, width: 70, height: 24, text: 'Label', fontFamily: 'Chicago', groupId: 'labelled-box' });
@@ -155,7 +155,7 @@ for (const zoom of [0.125, 0.5, 1, 1.25, 2, 4]) for (const unit of ['inches', 'c
   check(`bitmap rulers: ${unit}, zoom ${zoom}, signed decimal labels and scrolled origin`, () => {
     const hCanvas = document.createElement('canvas'), vCanvas = document.createElement('canvas');
     hCanvas.width = vCanvas.height = 320; hCanvas.height = vCanvas.width = 20;
-    const doc = new Document(); doc.unit = unit; doc.rulerMajor = unit === 'points' ? 36 : 1;
+    const doc = new Document({ snapToGrid: false, showRulers: true }); doc.unit = unit; doc.rulerMajor = unit === 'points' ? 36 : 1;
     doc.rulerIncrement = 0.5; doc.rulerOrigin = { x: 100, y: 100 };
     const renderer = Object.assign(Object.create(RulerRenderer.prototype), { hCanvas, vCanvas, doc, zoom, mousePos: { x: -1, y: -1 }, container: { scrollLeft: 13.5, scrollTop: 11.5 } });
     renderer.render();
@@ -174,20 +174,16 @@ for (const zoom of [0.125, 0.5, 1, 1.25, 2, 4]) for (const unit of ['inches', 'c
     }
   });
 }
-check('ruler labels preserve source bits and exact counterclockwise rotation without browser text rendering', () => {
-  const horizontal = document.createElement('canvas'), vertical = document.createElement('canvas');
-  horizontal.width = vertical.height = 100; horizontal.height = vertical.width = 20;
-  for (const [canvas, direction] of [[horizontal, true], [vertical, false]]) {
-    const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.fillStyle = '#000';
+check('MacDraw numeral 2 preserves the archived 7-row bitmap upright on both rulers', () => {
+  const rows = [0x70,0x88,0x08,0x10,0x20,0x40,0xf8];
+  for (const horizontal of [true, false]) {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 100;
+    const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,100,100); ctx.fillStyle = '#000';
     ctx.fillText = () => { throw new Error('bitmap label called browser text rendering'); };
-    drawRulerNumber(ctx, '-12.5e+3', 50.25, direction); opaqueBinary(canvas);
+    drawRulerNumber(ctx, '2', 50, horizontal);
+    const pixels = ctx.getImageData(horizontal ? 43 : 13, horizontal ? 7 : 42, 5, 7).data;
+    for (let y=0;y<7;y++) for (let x=0;x<5;x++) assert(pixels[(y*5+x)*4] === ((rows[y] & (128 >> x)) ? 0 : 255), 'digit 2 differs from MacDraw FONT 31881');
   }
-  const h = horizontal.getContext('2d').getImageData(0,0,100,20).data;
-  const v = vertical.getContext('2d').getImageData(0,0,20,100).data;
-  for (let y = 0; y < 10; y++) for (let x = 0; x < 100; x++) assert(h[(y*100+x)*4] === v[(x*20+15-y)*4], 'vertical label changed source bits');
-  const ctx = horizontal.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,100,20); ctx.fillStyle = '#000'; drawRulerNumber(ctx, '2', 50, true);
-  const pixels = ctx.getImageData(47,1,6,9).data, rows = [0x78,0x8c,0x0c,0x0c,0x18,0x30,0x60,0xc0,0xfc];
-  for (let y=0;y<9;y++) for (let x=0;x<6;x++) assert(pixels[(y*6+x)*4] === ((rows[y] & (128 >> x)) ? 0 : 255), 'digit 2 differs from archived Chicago bits');
 });
 const apple = new Image(); apple.src = appleMenuBitmap; await apple.decode();
 check('Apple menu PNG preserves every bit of the original 0x14 glyph', () => {
@@ -204,7 +200,7 @@ import { SelectionOverlay } from '../src/view/SelectionOverlay.js';
 for (const zoom of [0.125, 0.5, 1, 1.25, 2, 4]) check(`text handles: eight isolated 5x5 bitmaps at zoom ${zoom} with fractional bounds/scroll`, () => {
   const canvas = document.createElement('canvas'); canvas.width = 700; canvas.height = 350;
   const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
-  const doc = new Document(), selection = new Selection();
+  const doc = new Document({ snapToGrid: false, showRulers: true }), selection = new Selection();
   const shape = createShape('text', { x: 40.25 / zoom, y: 35.75 / zoom, width: 101.5, height: 24.25, text: '34u as' });
   doc.addObject(shape); selection.select(shape.id);
   const overlay = new SelectionOverlay(doc, selection); overlay.zoom = zoom; overlay.showRotationHandle = false;

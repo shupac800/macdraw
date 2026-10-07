@@ -1,38 +1,36 @@
 import { TOOLS } from '../util/constants.js';
-import textToolBitmap from '../../assets/bitmaps/text-tool.png';
-
+import dimensions from '../../assets/bitmaps/macdraw-1.9-tools.json';
 const DEFS = [
-  [TOOLS.SELECT, 'Selection arrow', 'V', '<path fill="currentColor" d="M4 2v17l4-5 4 7 3-2-4-7h7z"/>'],
-  [TOOLS.TEXT, 'Text', 'T', null],
-  [TOOLS.PERPENDICULAR, 'Perpendicular lines', 'H', '<path d="M11 3v16M3 11h16"/>'],
-  [TOOLS.LINE, 'Diagonal lines', 'L', '<path d="M4 4l14 14"/>'],
-  [TOOLS.RECT, 'Rectangle', 'R', '<rect x="3" y="5" width="16" height="12"/>'],
-  [TOOLS.ROUND_RECT, 'Round-corner rectangle', 'U', '<rect x="3" y="5" width="16" height="12" rx="4"/>'],
-  [TOOLS.OVAL, 'Circle / oval', 'O', '<ellipse cx="11" cy="11" rx="8" ry="6"/>'],
-  [TOOLS.ARC, 'Arc', 'A', '<path d="M3 4a15 15 0 0 1 15 15"/>'],
-  [TOOLS.FREEHAND, 'Freehand shape', 'F', '<path d="M3 17c15 5 12-15 6-13s1 14 10 13"/>'],
-  [TOOLS.POLYGON, 'Polygon', 'P', '<path d="M3 5l7 5 9-6-4 14-11-3z"/>'],
+  [TOOLS.SELECT, 'Selection arrow', 'V'],
+  [TOOLS.TEXT, 'Text', 'T'],
+  [TOOLS.PERPENDICULAR, 'Perpendicular lines', 'H'],
+  [TOOLS.LINE, 'Diagonal lines', 'L'],
+  [TOOLS.RECT, 'Rectangle', 'R'],
+  [TOOLS.ROUND_RECT, 'Round-corner rectangle', 'U'],
+  [TOOLS.OVAL, 'Circle / oval', 'O'],
+  [TOOLS.ARC, 'Arc', 'A'],
+  [TOOLS.FREEHAND, 'Freehand shape', 'F'],
+  [TOOLS.POLYGON, 'Polygon', 'P'],
 ];
 
 export class Toolbar {
   constructor(container, manager) {
     container.className = 'toolbar'; container.setAttribute('role', 'toolbar'); container.setAttribute('aria-label', 'Drawing tools');
     this.buttons = new Map(); this.manager = manager;
-    for (const [id, name, key, icon] of DEFS) {
+    for (const [id, name, key] of DEFS) {
       const button = document.createElement('button'); button.className = 'toolbar-btn';
-      button.title = `${name} (${key}) — double-click to keep drawing`;
+      button.title = `${name} (${key})`;
       button.setAttribute('aria-label', `${name} (${key})`); button.dataset.tool = id;
-      if (id === TOOLS.TEXT) {
-        const image = document.createElement('img'); image.src = textToolBitmap;
-        image.width = 9; image.height = 11; image.alt = ''; image.setAttribute('aria-hidden', 'true');
-        button.append(image);
-      } else {
-        button.innerHTML = `<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">${icon}</svg>`;
-      }
+      // Paint the native cell together, avoiding filtered image layers.
+      const canvas = document.createElement('canvas');
+      canvas.width = 24; canvas.height = 16;
+      canvas.setAttribute('aria-hidden', 'true'); button.append(canvas);
       button.addEventListener('click', () => { manager.chooseTool(id); this.update(); });
       button.addEventListener('dblclick', () => { manager.chooseTool(id, true); this.update(); });
       this.buttons.set(id, button); container.append(button);
     }
+    const preview = document.getElementById('style-preview');
+    if (preview) container.append(preview);
     manager.onChange(() => this.update());
   }
   update() {
@@ -40,6 +38,15 @@ export class Toolbar {
       const active = id === this.manager.getActiveTool();
       button.classList.toggle('active', active); button.classList.toggle('locked', id === this.manager.lockedTool);
       button.setAttribute('aria-pressed', String(active));
+      const ctx = button.firstElementChild.getContext('2d');
+      ctx.fillStyle = active ? '#000' : '#fff'; ctx.fillRect(0, 0, 24, 16);
+      ctx.fillStyle = active ? '#fff' : '#000';
+      // QuickDraw places the ink after the font's left bearing, not directly
+      // at the palette's four-pixel character origin.
+      const glyph = dimensions[id], left = 4 + glyph.bearing + glyph.sourceCrop[0], top = 2 + glyph.sourceCrop[1];
+      glyph.rows.forEach((row, y) => {
+        for (let x = 0; x < row.length; x++) if (row[x] === '1') ctx.fillRect(left + x, top + y, 1, 1);
+      });
     }
   }
 }

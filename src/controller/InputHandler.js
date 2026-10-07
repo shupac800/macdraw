@@ -27,7 +27,7 @@ export class InputHandler {
     on(this.canvas, 'pointerdown', this._onMouseDown);
     on(this.canvas, 'pointermove', this._onMouseMove);
     on(this.canvas, 'pointerup', this._onMouseUp);
-    on(this.canvas, 'pointercancel', () => { this.toolManager._activeTool?.cancel?.(); this.toolManager._activeTool?.deactivate?.(); this.toolManager.doc._notify('preview'); });
+    on(this.canvas, 'pointercancel', () => { this._stopAutoScroll(); this.toolManager._activeTool?.cancel?.(); this.toolManager._activeTool?.deactivate?.(); this.toolManager.doc._notify('preview'); });
     on(this.canvas, 'dblclick', this._onDoubleClick);
     on(window, 'keydown', this._onKeyDown);
     on(window, 'keyup', this._onKeyUp);
@@ -54,6 +54,8 @@ export class InputHandler {
   }
 
   _onMouseMove(e) {
+    this._lastPointer = e;
+    if (e.buttons === 1 && !this._scrollFrame) this._scrollFrame = requestAnimationFrame(() => this._autoScroll());
     const point = this._getDocPoint(e);
     this.toolManager.onMouseMove(this.toolManager.getActiveTool() === 'select' ? point : this._snap(point), {
       shiftKey: e.shiftKey,
@@ -71,6 +73,7 @@ export class InputHandler {
 
   _onMouseUp(e) {
     if (e.button !== 0) return;
+    this._stopAutoScroll();
     const raw = this._getDocPoint(e);
     const point = this.toolManager.getActiveTool() === 'select' ? raw : this._snap(raw);
     this.toolManager.onMouseUp(point, {
@@ -108,7 +111,37 @@ export class InputHandler {
     return { x: Math.max(0, Math.min(doc.pageWidth, point.x)), y: Math.max(0, Math.min(doc.pageHeight, point.y)) };
   }
 
+  _autoScroll() {
+    this._scrollFrame = null;
+    const event = this._lastPointer, tool = this.toolManager._activeTool;
+    if (!event || event.buttons !== 1 || (!tool?._dragging && !tool?._drawing)) return;
+    const viewport = this.canvas.closest('#canvas-container');
+    if (!viewport) return;
+    const bounds = viewport.getBoundingClientRect(), scale = bounds.width / viewport.clientWidth || 1;
+    const speed = (value, start, end) => value < start + 12 * scale ? -8 : value > end - 12 * scale ? 8 : 0;
+    const oldX = viewport.scrollLeft, oldY = viewport.scrollTop;
+    viewport.scrollLeft += speed(event.clientX, bounds.left, bounds.right);
+    viewport.scrollTop += speed(event.clientY, bounds.top, bounds.bottom);
+    if (oldX !== viewport.scrollLeft || oldY !== viewport.scrollTop) {
+      const raw = this._getDocPoint(event), point = this.toolManager.getActiveTool() === 'select' ? raw : this._snap(raw);
+      this.toolManager.onMouseMove(point, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey || event.metaKey, altKey: event.altKey, buttons: event.buttons });
+      this.toolManager.doc._notify('preview');
+      this.rulerRenderer?.setMousePos(raw.x, raw.y);
+      this.rulerRenderer?.render();
+    }
+    if (speed(event.clientX, bounds.left, bounds.right) || speed(event.clientY, bounds.top, bounds.bottom)) this._scrollFrame = requestAnimationFrame(() => this._autoScroll());
+  }
+
+  _stopAutoScroll() {
+    if (this._scrollFrame) cancelAnimationFrame(this._scrollFrame);
+    this._scrollFrame = null;
+    this._lastPointer = null;
+  }
+
   destroy() {
-    // Clean up if needed
+    this._stopAutoScroll();
+    for (const [event, handler] of Object.entries(this._bound)) {
+      (event.startsWith('key') ? window : this.canvas).removeEventListener(event, handler);
+    }
   }
 }

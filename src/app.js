@@ -1,7 +1,7 @@
 import { Document } from './model/Document.js';
 import { Selection } from './model/Selection.js';
 import { Clipboard } from './model/Clipboard.js';
-import { getVisualBounds as getBounds, hitTest } from './model/Shape.js';
+import { getVisualBounds as getBounds, getMultiBounds, hitTest } from './model/Shape.js';
 import { CommandStack } from './commands/CommandStack.js';
 import { Renderer } from './view/Renderer.js';
 import { SelectionOverlay } from './view/SelectionOverlay.js';
@@ -67,7 +67,7 @@ export class MacDraw {
     viewport.addEventListener('scroll', () => { this.rulerRenderer.render(); this.renderer.requestRender(); });
     viewport.addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); this.setZoom(this.zoom * (e.deltaY < 0 ? 1.25 : 0.8)); } }, { passive: false });
     document.getElementById('close-box').addEventListener('click', () => this.files.newDocument());
-    document.getElementById('zoom-box').addEventListener('click', () => { document.getElementById('document-window').classList.toggle('expanded'); this._handleResize(); });
+    document.getElementById('zoom-box').addEventListener('click', () => this.fitDrawing());
     document.getElementById('style-preview').addEventListener('click', () => this.menuBar.openByLabel('Fill'));
     document.getElementById('zoom-level').addEventListener('click', () => this.actions.zoomDialog());
     window.addEventListener('resize', () => { this.screen.update(); this._handleResize(); });
@@ -84,8 +84,12 @@ export class MacDraw {
   }
   setZoom(value) {
     this.finishText();
+    if (this.toolManager._activeTool?._dragging || this.toolManager._activeTool?._drawing) this.cancelInteraction();
     const viewport = document.getElementById('canvas-container'), old = this.zoom;
-    const cx = (viewport.scrollLeft + viewport.clientWidth / 2) / old, cy = (viewport.scrollTop + viewport.clientHeight / 2) / old;
+    const selected = this.selection.getSelectedObjects(this.doc);
+    const bounds = selected.length ? getMultiBounds(selected) : null;
+    const cx = bounds ? bounds.x + bounds.width / 2 : value === 1 ? this.doc.pageWidth / 2 : (viewport.scrollLeft + viewport.clientWidth / 2) / old;
+    const cy = bounds ? bounds.y + bounds.height / 2 : value === 1 ? this.doc.pageHeight / 2 : (viewport.scrollTop + viewport.clientHeight / 2) / old;
     this.zoom = Math.max(0.125, Math.min(4, value));
     this.renderer.zoom = this.rulerRenderer.zoom = this.selectionOverlay.zoom = this.toolManager.zoom = this.zoom;
     this._handleResize(); viewport.scrollLeft = cx * this.zoom - viewport.clientWidth / 2; viewport.scrollTop = cy * this.zoom - viewport.clientHeight / 2;
@@ -123,11 +127,12 @@ export class MacDraw {
     document.getElementById('document-title').textContent = title; document.title = `${title} — MacDraw`;
     document.getElementById('zoom-level').textContent = `${Math.round(this.zoom * 100)}%`;
     const objects = this.selection.getSelectedObjects(this.doc), preview = this.selectionOverlay.interactionPreview;
-    let status = objects.length ? `${objects.length} object${objects.length === 1 ? '' : 's'} selected${objects.some(o => o.locked) ? ' (locked)' : ''}` : 'Choose a tool. Double-click a tool to keep drawing.';
+    let status = objects.length ? `${objects.length} object${objects.length === 1 ? '' : 's'} selected${objects.some(o => o.locked) ? ' (locked)' : ''}` : '';
     if (this.doc.showSize && (preview || objects[0])) {
       const b = getBounds(preview || objects[0]), unit = this.doc.unit === 'cm' ? 72 / 2.54 : this.doc.unit === 'points' ? 1 : 72;
       status += `   X ${(b.x / unit).toFixed(2)}   Y ${(b.y / unit).toFixed(2)}   W ${(b.width / unit).toFixed(2)}   H ${(b.height / unit).toFixed(2)} ${this.doc.unit === 'inches' ? 'in' : this.doc.unit}`;
     }
+    document.getElementById('statusbar').hidden = !this.doc.showSize;
     document.getElementById('status-text').textContent = status;
     const holder = document.getElementById('style-preview');
     let canvas = holder.querySelector('canvas'); if (!canvas) { canvas = document.createElement('canvas'); canvas.width = 22; canvas.height = 12; holder.append(canvas); }

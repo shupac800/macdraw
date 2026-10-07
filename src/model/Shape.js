@@ -130,12 +130,20 @@ export function hitTest(shape, point, threshold = 5) {
 
   switch (shape.type) {
     case 'rect':
-    case 'roundRect':
       if (filled && pointInRect(point, bounds)) return true;
       return point.x >= bounds.x - threshold && point.x <= bounds.x + bounds.width + threshold &&
         point.y >= bounds.y - threshold && point.y <= bounds.y + bounds.height + threshold &&
         (Math.abs(point.x - bounds.x) <= threshold || Math.abs(point.x - bounds.x - bounds.width) <= threshold ||
          Math.abs(point.y - bounds.y) <= threshold || Math.abs(point.y - bounds.y - bounds.height) <= threshold);
+    case 'roundRect': {
+      // Signed distance to the same rounded boundary used by shapePath.
+      // Empty square corners must pass through to objects behind them.
+      const radius = Math.max(0, Math.min(shape.cornerRadius, bounds.width / 2, bounds.height / 2));
+      const qx = Math.abs(point.x - bounds.x - bounds.width / 2) - bounds.width / 2 + radius;
+      const qy = Math.abs(point.y - bounds.y - bounds.height / 2) - bounds.height / 2 + radius;
+      const distance = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - radius;
+      return (filled && distance <= 0) || Math.abs(distance) <= threshold;
+    }
     case 'text': return pointInRect(point, bounds);
 
     case 'oval':

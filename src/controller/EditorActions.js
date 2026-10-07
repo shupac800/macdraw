@@ -1,5 +1,5 @@
 import { DocumentCommand } from '../commands/DocumentCommand.js';
-import { getBounds, getMultiBounds } from '../model/Shape.js';
+import { getVisualBounds as getBounds, getMultiBounds } from '../model/Shape.js';
 import { rotatePoint, boundingBox } from '../util/geometry.js';
 import { PAGE_SIZES } from '../util/constants.js';
 import { textLayout } from '../util/text.js';
@@ -16,14 +16,24 @@ export class EditorActions {
     // Commands that group or copy objects must use document stacking order,
     // never the order in which the user clicked them.
     const ids = new Set(this.app.selection.ids);
+    for (const shape of this.app.doc.objects) if (ids.has(shape.id) && shape.groupId) this.app.doc.getGroupMembers(shape.groupId).forEach(s => ids.add(s.id));
     return this.app.doc.objects.filter(s => ids.has(s.id));
   }
-  get editable() { return this.selected.filter(s => !s.locked); }
+  get editable() { return this.selected.filter(s => !s.locked && (!s.groupId || this.app.doc.getGroupMembers(s.groupId).every(m => !m.locked))); }
+  get editableUnits() {
+    const units = new Map();
+    for (const shape of this.editable) {
+      const key = shape.groupId || shape.id;
+      if (!units.has(key)) units.set(key, []);
+      units.get(key).push(shape);
+    }
+    return [...units.values()];
+  }
   get canGroup() {
     // A selected group is one object, however many shapes it contains.
-    return new Set(this.selected.map(s => s.groupId ? `group:${s.groupId}` : `shape:${s.id}`)).size > 1;
+    return this._stackingUnits(this.selected).length > 1;
   }
-  change(label, mutate) { this.app.finishText(); this.app.commandStack.execute(new DocumentCommand(this.app.doc, label, mutate)); }
+  change(label, mutate) { this.app.finishText(); this.app.cancelInteraction(); this.app.commandStack.execute(new DocumentCommand(this.app.doc, label, mutate)); }
   undo() { this.app.finishText(); this.app.cancelInteraction(); this.app.commandStack.undo(); }
   redo() { this.app.finishText(); this.app.cancelInteraction(); this.app.commandStack.redo(); }
   copy() { this.app.finishText(); this.app.clipboard.copy(this.selected, this.app.doc.groups); }
@@ -95,9 +105,24 @@ export class EditorActions {
         const selected = all.filter(s => ids.has(s.id)), rest = all.filter(s => !ids.has(s.id));
         this.app.doc.objects = direction === 'front' ? [...rest, ...selected] : [...selected, ...rest];
       } else if (direction === 'forward') {
-        for (let i = all.length - 2; i >= 0; i--) if (ids.has(all[i].id) && !ids.has(all[i + 1].id)) [all[i], all[i + 1]] = [all[i + 1], all[i]];
-      } else for (let i = 1; i < all.length; i++) if (ids.has(all[i].id) && !ids.has(all[i - 1].id)) [all[i], all[i - 1]] = [all[i - 1], all[i]];
+        const units = this._stackingUnits(all);
+        for (let i = units.length - 2; i >= 0; i--) if (ids.has(units[i][0].id) && !ids.has(units[i + 1][0].id)) [units[i], units[i + 1]] = [units[i + 1], units[i]];
+        this.app.doc.objects = units.flat();
+      } else {
+        const units = this._stackingUnits(all);
+        for (let i = 1; i < units.length; i++) if (ids.has(units[i][0].id) && !ids.has(units[i - 1][0].id)) [units[i], units[i - 1]] = [units[i - 1], units[i]];
+        this.app.doc.objects = units.flat();
+      }
     });
+  }
+  _stackingUnits(shapes) {
+    const units = new Map();
+    for (const shape of shapes) {
+      const key = shape.groupId || shape.id;
+      if (!units.has(key)) units.set(key, []);
+      units.get(key).push(shape);
+    }
+    return [...units.values()];
   }
   group() {
     if (!this.canGroup) return;
@@ -108,11 +133,12 @@ export class EditorActions {
       const members = this.app.doc.objects.filter(s => ids.has(s.id));
       const group = { id: `group_${crypto.randomUUID()}`, members: members.map(s => s.id), previousGroups: Object.fromEntries(members.map(s => [s.id, s.groupId])) };
       members.forEach(s => { s.groupId = group.id; s.locked = false; }); this.app.doc.groups.push(group);
-      this.app.doc.objects = [...this.app.doc.objects.filter(s => !ids.has(s.id)), ...members];
+      this.app.doc.objects = this.app.doc.objects.filter(s => !ids.has(s.id));
+      this.app.doc.objects.push(...members);
     });
   }
   ungroup() {
-    const ids = [...new Set(this.selected.map(s => s.groupId).filter(Boolean))];
+    const ids = [...new Set(this.editable.map(s => s.groupId).filter(Boolean))];
     if (!ids.length) return;
     this.change('Ungroup', () => {
       const seen = new Set();
@@ -132,9 +158,7 @@ export class EditorActions {
         }
       }
     });
-    // Avoid leaving an apparently linked multi-selection: the next click or
-    // drag should act on the newly independent object (or nested subgroup).
-    this.app.selection.clear();
+    // MacDraw keeps the resulting individual objects/subgroups selected.
   }
   lock(value) { if (this.selected.length) this.change(value ? 'Lock' : 'Unlock', () => this.selected.forEach(s => { s.locked = value; })); }
   rotate(direction) {
@@ -168,11 +192,23 @@ export class EditorActions {
   alignToGrid() {
     if (!this.editable.length) return;
     this.change('Align to Grid', () => {
-      const snap = n => Math.round(n / this.app.doc.gridSize) * this.app.doc.gridSize;
-      this.editable.forEach(s => {
-        if (s.type === 'polygon' || s.type === 'line') { s.points = s.points.map(p => ({ x: snap(p.x), y: snap(p.y) })); Object.assign(s, boundingBox(s.points)); }
-        else translate(s, snap(s.x) - s.x, snap(s.y) - s.y);
-      });
+      const d = this.app.doc, snap = (n, origin) => origin + Math.round((n - origin) / d.gridSize) * d.gridSize;
+      for (const unit of this.editableUnits) {
+        const s = unit[0];
+        if (unit.length === 1 && !s.groupId && (s.type === 'polygon' || s.type === 'line')) {
+          s.points = s.points.map(p => ({ x: snap(p.x, d.rulerOrigin.x), y: snap(p.y, d.rulerOrigin.y) })); Object.assign(s, boundingBox(s.points));
+        } else if (unit.length === 1 && !s.groupId && ['rect','roundRect','oval','arc'].includes(s.type) && !s.rotation) {
+          const right = snap(s.x + s.width, d.rulerOrigin.x), bottom = snap(s.y + s.height, d.rulerOrigin.y);
+          s.x = snap(s.x, d.rulerOrigin.x); s.y = snap(s.y, d.rulerOrigin.y);
+          s.width = Math.max(d.gridSize, right - s.x); s.height = Math.max(d.gridSize, bottom - s.y);
+        } else {
+          const b = getMultiBounds(unit);
+          const step = unit.length === 1 && !s.groupId && s.type === 'text' ? d.gridSize / 2 : d.gridSize;
+          const textSnap = (n, origin) => origin + Math.round((n - origin) / step) * step;
+          const dx = textSnap(b.x, d.rulerOrigin.x) - b.x, dy = textSnap(b.y, d.rulerOrigin.y) - b.y;
+          unit.forEach(member => translate(member, dx, dy));
+        }
+      }
     });
   }
   async alignDialog() {
@@ -181,9 +217,21 @@ export class EditorActions {
       { name: 'vertical', label: 'Vertical alignment', value: 'none', options: [{ value: 'none', label: 'No change' }, { value: 'top', label: 'Tops' }, { value: 'middle', label: 'T/B centers' }, { value: 'bottom', label: 'Bottoms' }] },
     ] });
     if (!result) return;
+    this.alignObjects(result.horizontal, result.vertical);
+  }
+  alignObjects(horizontal, vertical) {
+    if (!this.editable.length || (horizontal === 'none' && vertical === 'none')) return;
     this.change('Align Objects', () => {
-      const b = getMultiBounds(this.editable);
-      this.editable.forEach(s => { const r = getBounds(s); const dx = result.horizontal === 'left' ? b.x - r.x : result.horizontal === 'right' ? b.x + b.width - r.x - r.width : result.horizontal === 'center' ? b.x + b.width / 2 - r.x - r.width / 2 : 0; const dy = result.vertical === 'top' ? b.y - r.y : result.vertical === 'bottom' ? b.y + b.height - r.y - r.height : result.vertical === 'middle' ? b.y + b.height / 2 - r.y - r.height / 2 : 0; translate(s, dx, dy); });
+      const b = getMultiBounds(this.selected), d = this.app.doc;
+      const snap = (value, origin) => d.snapToGrid ? origin + Math.round((value - origin) / d.gridSize) * d.gridSize : value;
+      const targetX = snap(horizontal === 'left' ? b.x : horizontal === 'right' ? b.x + b.width : b.x + b.width / 2, d.rulerOrigin.x);
+      const targetY = snap(vertical === 'top' ? b.y : vertical === 'bottom' ? b.y + b.height : b.y + b.height / 2, d.rulerOrigin.y);
+      for (const unit of this.editableUnits) {
+        const r = getMultiBounds(unit);
+        const dx = horizontal === 'left' ? targetX - r.x : horizontal === 'right' ? targetX - r.x - r.width : horizontal === 'center' ? targetX - r.x - r.width / 2 : 0;
+        const dy = vertical === 'top' ? targetY - r.y : vertical === 'bottom' ? targetY - r.y - r.height : vertical === 'middle' ? targetY - r.y - r.height / 2 : 0;
+        unit.forEach(s => translate(s, dx, dy));
+      }
     });
   }
   async rulersDialog() {

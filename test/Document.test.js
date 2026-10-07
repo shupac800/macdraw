@@ -7,13 +7,17 @@ describe('Document', () => {
 
   beforeEach(() => {
     resetIdCounter();
-    doc = new Document();
+    doc = new Document({ snapToGrid: false, showRulers: true });
     Document.setShapeModule({ getBounds, hitTest });
   });
 
   it('creates with default page size', () => {
     expect(doc.pageWidth).toBe(612);
     expect(doc.pageHeight).toBe(792);
+  });
+
+  it('starts original MacDraw documents with alignment grid on and rulers hidden', () => {
+    const fresh = new Document(); expect(fresh.snapToGrid).toBe(true); expect(fresh.showRulers).toBe(false);
   });
 
   it('creates with custom page size', () => {

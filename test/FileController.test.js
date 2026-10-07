@@ -7,7 +7,7 @@ import { saveToJSON } from '../src/util/serialize.js';
 let app, files;
 beforeEach(() => {
   vi.stubGlobal('localStorage', { setItem: vi.fn() });
-  app = { doc: new Document(), finishText: vi.fn(), updateStatus: vi.fn(), loadDocument: vi.fn(doc => { app.doc = doc; }), dialog: { show: vi.fn(), alert: vi.fn() } };
+  app = { doc: new Document({ snapToGrid: false, showRulers: true }), finishText: vi.fn(), updateStatus: vi.fn(), loadDocument: vi.fn(doc => { app.doc = doc; }), dialog: { show: vi.fn(), alert: vi.fn() } };
   files = new FileController(app); vi.stubGlobal('window', {});
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -32,7 +32,7 @@ describe('Windows editable-file workflow', () => {
     expect(await files.save()).toBe(false); expect(app.doc.name).toBe('Untitled'); expect(files.dirty).toBe(true); expect(app.dialog.alert).toHaveBeenCalled();
   });
   it('opens editable JSON with a retained handle and a clean baseline', async () => {
-    const doc = new Document(); doc.addObject(createShape('text', { text: 'Chicago', width: 100, height: 16 }));
+    const doc = new Document({ snapToGrid: false, showRulers: true }); doc.addObject(createShape('text', { text: 'Chicago', width: 100, height: 16 }));
     const handle = { name: 'Test.macdraw' }, file = { name: handle.name, size: 2000, text: async () => saveToJSON(doc) };
     await files.openFile(file, handle); expect(app.doc.name).toBe('Test'); expect(app.doc.objects[0].text).toBe('Chicago'); expect(files.handle).toBe(handle); expect(files.dirty).toBe(false);
   });

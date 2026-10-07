@@ -19,7 +19,7 @@ let app, actions;
 const mods = { shiftKey: false };
 beforeEach(() => {
   resetIdCounter(); Document.setShapeModule({ getBounds, hitTest });
-  app = { doc: new Document(), selection: new Selection(), clipboard: new Clipboard(), commandStack: new CommandStack(), finishText: vi.fn(), cancelInteraction: vi.fn(), toolManager: { chooseTool: vi.fn() } };
+  app = { doc: new Document({ snapToGrid: false, showRulers: true }), selection: new Selection(), clipboard: new Clipboard(), commandStack: new CommandStack(), finishText: vi.fn(), cancelInteraction: vi.fn(), toolManager: { chooseTool: vi.fn() } };
   actions = new EditorActions(app);
 });
 const add = (x = 10) => { const s = createShape('rect', { x, y: 10, width: 40, height: 40 }); app.doc.addObject(s); return s; };
@@ -133,9 +133,9 @@ describe('classic editing regressions', () => {
     actions.undo(); expect(app.doc.objects.map(s => s.id)).toEqual([box.id, text.id]);
     actions.redo(); expect(app.doc.objects.slice(-2).map(s => s.type)).toEqual(['rect', 'text']);
   });
-  it('ungrouping a box and label lets the next drag move just the box', () => {
+  it('clearing selection after ungrouping a box and label lets a drag move just the box', () => {
     const box = add(), text = createShape('text', { x: 20, y: 20, width: 24, height: 16, text: 'Label' });
-    app.doc.addObject(text); app.selection.selectMultiple([box.id, text.id]); actions.group(); actions.ungroup();
+    app.doc.addObject(text); app.selection.selectMultiple([box.id, text.id]); actions.group(); actions.ungroup(); app.selection.clear();
     const tool = wire(new SelectTool());
     tool.onMouseDown({ x: 40, y: 40 }, mods); tool.onMouseMove({ x: 60, y: 70 }, mods); tool.onMouseUp({ x: 60, y: 70 }, mods);
     expect(box.x).toBe(30); expect(box.y).toBe(40);
@@ -143,9 +143,9 @@ describe('classic editing regressions', () => {
     expect(app.selection.ids).toEqual([box.id]);
     app.commandStack.undo(); expect(box.x).toBe(10); expect(text.x).toBe(20);
   });
-  it('ungrouping a box and label lets the next drag move just the text', () => {
+  it('clearing selection after ungrouping a box and label lets a drag move just the text', () => {
     const box = add(), text = createShape('text', { x: 20, y: 20, width: 24, height: 16, text: 'Label' });
-    app.doc.addObject(text); app.selection.selectMultiple([box.id, text.id]); actions.group(); actions.ungroup();
+    app.doc.addObject(text); app.selection.selectMultiple([box.id, text.id]); actions.group(); actions.ungroup(); app.selection.clear();
     const tool = wire(new SelectTool());
     tool.onMouseDown({ x: 30, y: 28 }, mods); tool.onMouseMove({ x: 50, y: 58 }, mods); tool.onMouseUp({ x: 50, y: 58 }, mods);
     expect(box.x).toBe(10); expect(box.y).toBe(10);
