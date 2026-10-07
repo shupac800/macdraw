@@ -23,7 +23,8 @@
       7,
       11
     ],
-    "sha256": "95da36a3e7a1f14d04e47c2639d4f527156144006b2be1b960a10733acfe77ae"
+    "sha256": "95da36a3e7a1f14d04e47c2639d4f527156144006b2be1b960a10733acfe77ae",
+    "bearing": 4
   },
   "text": {
     "rows": [
@@ -49,7 +50,8 @@
       9,
       11
     ],
-    "sha256": "1f6e4d605a18eb63e168c5dd382bf0b3db04679817b6e36b1c6ee5c446016867"
+    "sha256": "1f6e4d605a18eb63e168c5dd382bf0b3db04679817b6e36b1c6ee5c446016867",
+    "bearing": 3
   },
   "perpendicular": {
     "rows": [
@@ -75,7 +77,8 @@
       13,
       11
     ],
-    "sha256": "ebf1252ecce685392f5e2b583d9e8d8468a8b31a59ddcabd2cd9d11c8b792e85"
+    "sha256": "ebf1252ecce685392f5e2b583d9e8d8468a8b31a59ddcabd2cd9d11c8b792e85",
+    "bearing": 1
   },
   "line": {
     "rows": [
@@ -101,7 +104,8 @@
       11,
       11
     ],
-    "sha256": "7d91b2b8b9dfca2f1ed8bc459d69825f53dcac0e6f4bafd5ea5c3b3212756b71"
+    "sha256": "7d91b2b8b9dfca2f1ed8bc459d69825f53dcac0e6f4bafd5ea5c3b3212756b71",
+    "bearing": 2
   },
   "rect": {
     "rows": [
@@ -126,7 +130,8 @@
       15,
       11
     ],
-    "sha256": "e12ec39d70f4de43cb9812eaf71eb14e12a7c1d0a6b44f12da52e47194e093f2"
+    "sha256": "e12ec39d70f4de43cb9812eaf71eb14e12a7c1d0a6b44f12da52e47194e093f2",
+    "bearing": 0
   },
   "roundRect": {
     "rows": [
@@ -151,7 +156,8 @@
       15,
       11
     ],
-    "sha256": "464308e2dd3cf9cd1f60ee362861e2d34782df85b69060d54c179b7406779ccc"
+    "sha256": "464308e2dd3cf9cd1f60ee362861e2d34782df85b69060d54c179b7406779ccc",
+    "bearing": 0
   },
   "oval": {
     "rows": [
@@ -176,7 +182,8 @@
       15,
       11
     ],
-    "sha256": "16d978266ca2d9fda2c0db5989d8b90448d307cd586defb16672fb4a50eed32f"
+    "sha256": "16d978266ca2d9fda2c0db5989d8b90448d307cd586defb16672fb4a50eed32f",
+    "bearing": 0
   },
   "arc": {
     "rows": [
@@ -201,7 +208,8 @@
       15,
       11
     ],
-    "sha256": "cddfdf51b157f68d880c146e918be1cf2f41df49de49a53fe58efdb07fd7759a"
+    "sha256": "cddfdf51b157f68d880c146e918be1cf2f41df49de49a53fe58efdb07fd7759a",
+    "bearing": 0
   },
   "freehand": {
     "rows": [
@@ -227,7 +235,8 @@
       15,
       11
     ],
-    "sha256": "930ceeadb88d0c7492a226b7d52e83778699ca946dca2d78e806ddb9a1127845"
+    "sha256": "930ceeadb88d0c7492a226b7d52e83778699ca946dca2d78e806ddb9a1127845",
+    "bearing": 0
   },
   "polygon": {
     "rows": [
@@ -253,6 +262,7 @@
       15,
       11
     ],
-    "sha256": "caf1767cbd3b32b11500cbc6fe6bdf61b038c0182ef1a53c281bf854d86444a0"
+    "sha256": "caf1767cbd3b32b11500cbc6fe6bdf61b038c0182ef1a53c281bf854d86444a0",
+    "bearing": 0
   }
 }

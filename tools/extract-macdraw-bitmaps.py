@@ -40,13 +40,13 @@ def extract(directory):
     tool_font = read_font(directory,31755)
     manifest = {}
     for code, name in enumerate(["select","text","perpendicular","line","rect","roundRect","oval","arc","freehand","polygon"],3):
-        image, advance, _ = tool_font(code)
+        image, advance, bearing = tool_font(code)
         crop = image.getbbox()
         image = image.crop(crop)
         target = OUT / f"tool-{name}.png"
         image.save(target)
         rows = ["".join("1" if image.getpixel((x,y))[3] else "0" for x in range(image.width)) for y in range(image.height)]
-        manifest[name] = dict(rows=rows,glyph=code,width=image.width,height=image.height,advance=advance,sourceCrop=list(crop),sha256=hashlib.sha256(target.read_bytes()).hexdigest())
+        manifest[name] = dict(rows=rows,glyph=code,width=image.width,height=image.height,advance=advance,bearing=bearing,sourceCrop=list(crop),sha256=hashlib.sha256(target.read_bytes()).hexdigest())
     (OUT / "macdraw-1.9-tools.json").write_text(json.dumps(manifest,indent=2)+"\n")
     numeral_font = read_font(directory,31881)
     numbers = {}

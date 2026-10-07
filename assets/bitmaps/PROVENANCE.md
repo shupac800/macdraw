@@ -81,10 +81,22 @@ resource bits instead of SVG approximations.
 
 Static code evidence: `CODE` 2 at resource-relative offsets `0x3ea8` through
 `0x3ed8` establishes 24x16 cells with 17-pixel vertical pitch. At `0x3f68`
-through `0x3f82` the routine places the glyph four pixels from the cell's left,
+through `0x3f82` the routine places the character origin four pixels from the cell's left,
 sets its baseline three rows above the bottom, and draws tool index plus 3.
 The shared character routine at `0x67dc` selects family 248, size 11. These
 references describe behavior in our own words; no application code is bundled.
+
+The FONT offset/width table also supplies a left bearing: arrow 4, T 3,
+perpendicular lines 1, diagonal lines 2, and the other six tools 0. The earlier
+tool extraction discarded this metric even though the font reader returned it.
+It is now recorded as `bearing` and included before painting the cropped ink.
+Thus the T ink starts at column 7 rather than 4. All ten ink bounds share center
+column 11.5 in the 24-pixel cell. Their odd widths require a one-pixel margin
+asymmetry on the native integer grid; the T has seven blank columns left and
+eight right. Baseline placement and every bitmap row/PNG hash are unchanged.
+This corrects original font placement rather than applying a fractional CSS
+centering transform. Complete-cell screenshots check both the ink and margins
+at fractional effective DPRs, including selected and locked tool states.
 
 `macdraw-1.9-ruler.json` records original family 249 digits, minus and decimal
 point with advance widths and bitmap rows. Numerals have seven bitmap rows

@@ -36,7 +36,7 @@ try {
             if(pixels[index]!==expected||pixels[index+1]!==expected||pixels[index+2]!==expected||pixels[index+3]!==255)bad++;
           }
           return bad;
-        },{url:`data:image/png;base64,${shot.toString('base64')}`,x:Math.round(bounds.x*dpr)+4*scale,y:Math.round(bounds.y*dpr)+(2+glyph.sourceCrop[1])*scale,scale,rows:glyph.rows,active,width:glyph.width,height:glyph.height});
+        },{url:`data:image/png;base64,${shot.toString('base64')}`,x:Math.round(bounds.x*dpr)+(4+glyph.bearing+glyph.sourceCrop[0])*scale,y:Math.round(bounds.y*dpr)+(2+glyph.sourceCrop[1])*scale,scale,rows:glyph.rows,active,width:glyph.width,height:glyph.height});
         assert.equal(failures,0,`${id}, DPR ${dpr}, scale ${scale}, state ${state}: changed source bits`); checks++;
       }
       if(dpr===1&&scale===2)await page.screenshot({path:new URL('toolbar-and-rulers.png',output).pathname.replace(/^\/([A-Za-z]:)/,'$1')});

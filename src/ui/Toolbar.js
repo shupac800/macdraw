@@ -41,9 +41,11 @@ export class Toolbar {
       const ctx = button.firstElementChild.getContext('2d');
       ctx.fillStyle = active ? '#000' : '#fff'; ctx.fillRect(0, 0, 24, 16);
       ctx.fillStyle = active ? '#fff' : '#000';
-      const glyph = dimensions[id], top = 2 + glyph.sourceCrop[1];
+      // QuickDraw places the ink after the font's left bearing, not directly
+      // at the palette's four-pixel character origin.
+      const glyph = dimensions[id], left = 4 + glyph.bearing + glyph.sourceCrop[0], top = 2 + glyph.sourceCrop[1];
       glyph.rows.forEach((row, y) => {
-        for (let x = 0; x < row.length; x++) if (row[x] === '1') ctx.fillRect(4 + x, top + y, 1, 1);
+        for (let x = 0; x < row.length; x++) if (row[x] === '1') ctx.fillRect(left + x, top + y, 1, 1);
       });
     }
   }
