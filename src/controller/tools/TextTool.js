@@ -90,7 +90,8 @@ export class TextTool {
     const { width, height } = textarea.value !== shape.text && textarea.value.trim()
       ? this._textDimensions(shape, textarea.value) : shape;
     textarea.style.width = `${width * zoom}px`;
-    textarea.style.height = `${Math.max(20, height) * zoom}px`;
+    // Match the text bounds so the editing frame and side handles share a center.
+    textarea.style.height = `${height * zoom}px`;
     textarea.style.transformOrigin = `${width * zoom / 2}px ${height * zoom / 2}px`;
   }
   finishEditing(cancel = false) {

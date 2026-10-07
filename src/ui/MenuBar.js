@@ -1,4 +1,5 @@
 import { FONTS } from '../util/constants.js';
+import appleMenuBitmap from '../../assets/bitmaps/apple-menu.png';
 import chicagoLicense from '../../assets/fonts/LICENSE-Chicago-Kare.txt?raw';
 
 const separator = { type: 'separator' };
@@ -9,7 +10,11 @@ export class MenuBar {
     this.menus.forEach(menu => {
       const wrapper = document.createElement('div'); wrapper.className = `menu-wrapper${menu.apple ? ' apple-menu' : ''}`;
       const trigger = document.createElement('button'); trigger.className = 'menu-trigger'; trigger.setAttribute('aria-haspopup', 'menu'); trigger.setAttribute('aria-expanded', 'false'); trigger.setAttribute('aria-label', menu.label);
-      if (menu.apple) trigger.innerHTML = '<svg viewBox="0 0 16 18" aria-hidden="true"><path d="M10 0c0 3-2 4-3 4 0-2 1-4 3-4M8 5C4 2 0 6 1 11c1 5 3 7 5 6l2-1 2 1c2 1 4-2 5-5-4-2-3-5 0-7-2-2-4-2-7 0z"/></svg>';
+      if (menu.apple) {
+        const image = document.createElement('img'); image.src = appleMenuBitmap;
+        image.width = 9; image.height = 11; image.alt = ''; image.setAttribute('aria-hidden', 'true');
+        trigger.append(image);
+      }
       else trigger.textContent = menu.label;
       trigger.addEventListener('click', () => this.opened?.menu === menu ? this.close() : this.open(menu, wrapper));
       trigger.addEventListener('mouseenter', () => { if (this.opened && this.opened.menu !== menu) this.open(menu, wrapper); });

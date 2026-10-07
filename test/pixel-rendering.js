@@ -140,5 +140,95 @@ check('marquee-select a group and other objects, then drag the group: all pixels
   document.getElementById('samples').append(canvas);
 });
 
+import { RulerRenderer } from '../src/view/RulerRenderer.js';
+import { drawRulerNumber } from '../src/util/bitmapText.js';
+import appleMenuBitmap from '../assets/bitmaps/apple-menu.png';
+
+function opaqueBinary(canvas) {
+  const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+  assert(pixels.some((v, i) => i % 4 === 0 && v === 0), 'bitmap has no black pixels');
+  for (let i = 0; i < pixels.length; i += 4) {
+    assert((pixels[i] === 0 || pixels[i] === 255) && pixels[i] === pixels[i+1] && pixels[i] === pixels[i+2] && pixels[i+3] === 255, `non-binary pixel at ${i/4}`);
+  }
+}
+for (const zoom of [0.125, 0.5, 1, 1.25, 2, 4]) for (const unit of ['inches', 'cm', 'points']) {
+  check(`bitmap rulers: ${unit}, zoom ${zoom}, signed decimal labels and scrolled origin`, () => {
+    const hCanvas = document.createElement('canvas'), vCanvas = document.createElement('canvas');
+    hCanvas.width = vCanvas.height = 320; hCanvas.height = vCanvas.width = 20;
+    const doc = new Document(); doc.unit = unit; doc.rulerMajor = unit === 'points' ? 36 : 1;
+    doc.rulerIncrement = 0.5; doc.rulerOrigin = { x: 100, y: 100 };
+    const renderer = Object.assign(Object.create(RulerRenderer.prototype), { hCanvas, vCanvas, doc, zoom, mousePos: { x: -1, y: -1 }, container: { scrollLeft: 13.5, scrollTop: 11.5 } });
+    renderer.render();
+    for (const canvas of [hCanvas, vCanvas]) {
+      opaqueBinary(canvas);
+      const source = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      for (const scale of [1, 2, 3]) {
+        const enlarged = document.createElement('canvas'); enlarged.width = canvas.width * scale; enlarged.height = canvas.height * scale;
+        const ctx = enlarged.getContext('2d'); ctx.imageSmoothingEnabled = false; ctx.drawImage(canvas, 0, 0, enlarged.width, enlarged.height);
+        const pixels = ctx.getImageData(0, 0, enlarged.width, enlarged.height).data;
+        for (let y = 0; y < enlarged.height; y++) for (let x = 0; x < enlarged.width; x++) {
+          const i = (y * enlarged.width + x) * 4, original = (Math.floor(y / scale) * canvas.width + Math.floor(x / scale)) * 4;
+          for (let channel = 0; channel < 4; channel++) assert(pixels[i+channel] === source[original+channel], 'scaling changed a ruler bit');
+        }
+      }
+    }
+  });
+}
+check('ruler labels preserve source bits and exact counterclockwise rotation without browser text rendering', () => {
+  const horizontal = document.createElement('canvas'), vertical = document.createElement('canvas');
+  horizontal.width = vertical.height = 100; horizontal.height = vertical.width = 20;
+  for (const [canvas, direction] of [[horizontal, true], [vertical, false]]) {
+    const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.fillStyle = '#000';
+    ctx.fillText = () => { throw new Error('bitmap label called browser text rendering'); };
+    drawRulerNumber(ctx, '-12.5e+3', 50.25, direction); opaqueBinary(canvas);
+  }
+  const h = horizontal.getContext('2d').getImageData(0,0,100,20).data;
+  const v = vertical.getContext('2d').getImageData(0,0,20,100).data;
+  for (let y = 0; y < 10; y++) for (let x = 0; x < 100; x++) assert(h[(y*100+x)*4] === v[(x*20+15-y)*4], 'vertical label changed source bits');
+  const ctx = horizontal.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,100,20); ctx.fillStyle = '#000'; drawRulerNumber(ctx, '2', 50, true);
+  const pixels = ctx.getImageData(47,1,6,9).data, rows = [0x78,0x8c,0x0c,0x0c,0x18,0x30,0x60,0xc0,0xfc];
+  for (let y=0;y<9;y++) for (let x=0;x<6;x++) assert(pixels[(y*6+x)*4] === ((rows[y] & (128 >> x)) ? 0 : 255), 'digit 2 differs from archived Chicago bits');
+});
+const apple = new Image(); apple.src = appleMenuBitmap; await apple.decode();
+check('Apple menu PNG preserves every bit of the original 0x14 glyph', () => {
+  assert(apple.naturalWidth === 9 && apple.naturalHeight === 11, 'wrong bitmap dimensions');
+  const canvas = document.createElement('canvas'); canvas.width = 9; canvas.height = 11;
+  const ctx = canvas.getContext('2d'); ctx.drawImage(apple, 0, 0); const pixels = ctx.getImageData(0,0,9,11).data;
+  const rows = [0x0600,0x0c00,0x0800,0x7700,0xff80,0xfe00,0xfe00,0xff80,0xff80,0x7f00,0x3600];
+  for (let y=0;y<11;y++) for (let x=0;x<9;x++) {
+    const i=(y*9+x)*4; assert(pixels[i] === 0 && pixels[i+1] === 0 && pixels[i+2] === 0 && pixels[i+3] === ((rows[y] & (0x8000 >> x)) ? 255 : 0), 'Apple glyph differs from archived bits');
+  }
+});
+
+import { SelectionOverlay } from '../src/view/SelectionOverlay.js';
+for (const zoom of [0.125, 0.5, 1, 1.25, 2, 4]) check(`text handles: eight isolated 5x5 bitmaps at zoom ${zoom} with fractional bounds/scroll`, () => {
+  const canvas = document.createElement('canvas'); canvas.width = 700; canvas.height = 350;
+  const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  const doc = new Document(), selection = new Selection();
+  const shape = createShape('text', { x: 40.25 / zoom, y: 35.75 / zoom, width: 101.5, height: 24.25, text: '34u as' });
+  doc.addObject(shape); selection.select(shape.id);
+  const overlay = new SelectionOverlay(doc, selection); overlay.zoom = zoom; overlay.showRotationHandle = false;
+  ctx.translate(-7.25, -3.5); ctx.scale(zoom, zoom); overlay.render(ctx);
+  // Inspect raw pixels before monochromePixels can disguise antialiasing.
+  opaqueBinary(canvas);
+  const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data, black=new Set();
+  for(let i=0;i<pixels.length;i+=4) if(pixels[i]===0) black.add(i/4);
+  const components=[];
+  while(black.size){
+    const start=black.values().next().value, queue=[start], points=[];black.delete(start);
+    for(let n=0;n<queue.length;n++){
+      const index=queue[n],x=index%canvas.width,y=Math.floor(index/canvas.width);points.push({x,y});
+      for(const neighbor of [index-1,index+1,index-canvas.width,index+canvas.width])if(black.delete(neighbor))queue.push(neighbor);
+    }
+    const xs=points.map(p=>p.x),ys=points.map(p=>p.y);
+    const left=Math.min(...xs),top=Math.min(...ys),right=Math.max(...xs)+1,bottom=Math.max(...ys)+1;
+    assert(points.length===25 && right-left===5 && bottom-top===5, 'handle is offset, doubled, overlapping or not a filled 5x5 square');
+    const textLeft=shape.x*zoom-7.25,textTop=shape.y*zoom-3.5,textRight=textLeft+shape.width*zoom,textBottom=textTop+shape.height*zoom;
+    assert(right<=textLeft || left>=textRight || bottom<=textTop || top>=textBottom, 'handle overlaps the text bounds');
+    components.push(points);
+  }
+  assert(components.length===8, `expected eight handles, found ${components.length}`);
+});
+
 document.getElementById('summary').textContent = `${passed} passed; ${failed} failed. Raw 50% fill: equal black/white pixels, zero gray pixels, exact checkerboard parity.`;
 document.getElementById('summary').dataset.failures = failed;

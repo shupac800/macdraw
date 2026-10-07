@@ -1,6 +1,6 @@
 import { HANDLE_SIZE, ROTATION_HANDLE_DISTANCE } from '../util/constants.js';
 import { getVisualBounds as getBounds, getMultiBounds, renderShape } from '../model/Shape.js';
-import { getHandlePositions } from '../util/geometry.js';
+import { getHandlePositions, getSelectionHandleBounds } from '../util/geometry.js';
 
 export class SelectionOverlay {
   constructor(doc, selection) {
@@ -16,7 +16,7 @@ export class SelectionOverlay {
     const selectedObjects = this.selection.getSelectedObjects(this.doc);
     if (selectedObjects.length === 1) {
       // Single shape: draw handles on its own bounds
-      this._renderSelectionBox(ctx, getBounds(selectedObjects[0]));
+      this._renderSelectionBox(ctx, getBounds(selectedObjects[0]), selectedObjects[0].type === 'text');
     } else if (selectedObjects.length > 1) {
       // Multiple shapes: draw dashed outlines on each, handles on unified bounds
       for (const obj of selectedObjects) {
@@ -49,7 +49,7 @@ export class SelectionOverlay {
   /**
    * Solid outline with resize/rotation handles.
    */
-  _renderSelectionBox(ctx, bounds) {
+  _renderSelectionBox(ctx, bounds, text = false) {
     ctx.save();
 
     // Black square handles, as on the monochrome Macintosh.
@@ -58,17 +58,22 @@ export class SelectionOverlay {
     ctx.setLineDash([]);
 
     // Resize handles
-    const handles = getHandlePositions(bounds);
-    const size = HANDLE_SIZE / this.zoom;
-    const half = size / 2;
+    const handles = getHandlePositions(getSelectionHandleBounds(bounds, this.zoom, text));
+    const transform = ctx.getTransform();
 
     ctx.fillStyle = '#000';
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1.5;
 
+    // Paint the five-pixel bitmaps in framebuffer coordinates. Fractional
+    // object bounds, drawing zoom and scrolling must not antialias their edges.
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
     for (const pos of Object.values(handles)) {
-      ctx.fillRect(pos.x - half, pos.y - half, size, size);
+      const x = transform.a * pos.x + transform.c * pos.y + transform.e;
+      const y = transform.b * pos.x + transform.d * pos.y + transform.f;
+      ctx.fillRect(Math.round(x - HANDLE_SIZE / 2), Math.round(y - HANDLE_SIZE / 2), HANDLE_SIZE, HANDLE_SIZE);
     }
+    ctx.restore();
 
     if (!this.showRotationHandle) { ctx.restore(); return; }
 

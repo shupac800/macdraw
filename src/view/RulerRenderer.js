@@ -1,4 +1,5 @@
 import { RULER_SIZE } from '../util/constants.js';
+import { drawRulerNumber } from '../util/bitmapText.js';
 
 export class RulerRenderer {
   constructor(hCanvas, vCanvas, doc) {
@@ -23,7 +24,7 @@ export class RulerRenderer {
     const minor = major / divisions;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.font = '12px Chicago'; ctx.textAlign = 'center';
+    ctx.fillStyle = ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.imageSmoothingEnabled = false;
     const start = Math.floor((scroll / this.zoom - origin) / minor);
     const end = Math.ceil(((scroll + length) / this.zoom - origin) / minor);
     // Skip minor ticks when reduced far enough that they would merge.
@@ -40,8 +41,7 @@ export class RulerRenderer {
       ctx.stroke();
       if (isMajor && Math.abs(i) > 0) {
         const value = String(i / divisions * this.doc.rulerIncrement);
-        if (horizontal) ctx.fillText(value, p, 10);
-        else { ctx.save(); ctx.translate(8, p); ctx.rotate(-Math.PI / 2); ctx.fillText(value, 0, 3); ctx.restore(); }
+        drawRulerNumber(ctx, value, p - 0.5, horizontal);
       }
     }
     const pointer = (horizontal ? this.mousePos.x : this.mousePos.y) * this.zoom - scroll;

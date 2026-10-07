@@ -1,5 +1,5 @@
 import { getVisualBounds as getBounds, getMultiBounds } from '../../model/Shape.js';
-import { getHandleAtPoint, normalizeRect, rotatePoint } from '../../util/geometry.js';
+import { getHandleAtPoint, getSelectionHandleBounds, normalizeRect, rotatePoint } from '../../util/geometry.js';
 import { HANDLE_SIZE, ROTATION_HANDLE_DISTANCE, TOOLS } from '../../util/constants.js';
 import { MoveCommand } from '../../commands/MoveCommand.js';
 import { ResizeGroupCommand } from '../../commands/ResizeGroupCommand.js';
@@ -57,7 +57,9 @@ export class SelectTool {
         return;
       }
 
-      const handle = getHandleAtPoint(point, unifiedBounds, Math.max(HANDLE_SIZE, 7) / (this.manager?.zoom || 1));
+      const zoom = this.manager?.zoom || 1;
+      const handleBounds = getSelectionHandleBounds(unifiedBounds, zoom, selectedShapes.length === 1 && selectedShapes[0].type === 'text');
+      const handle = getHandleAtPoint(point, handleBounds, Math.max(HANDLE_SIZE, 7) / zoom);
       if (handle && selectedShapes.every(s => !s.locked)) {
         this._dragging = true;
         this._mode = 'resize';
@@ -424,7 +426,9 @@ export class SelectTool {
       const unifiedBounds = selectedShapes.length === 1
         ? getBounds(selectedShapes[0])
         : getMultiBounds(selectedShapes);
-      const handle = selectedShapes.every(s => !s.locked) && getHandleAtPoint(point, unifiedBounds, Math.max(HANDLE_SIZE, 7) / (this.manager?.zoom || 1));
+      const zoom = this.manager?.zoom || 1;
+      const handleBounds = getSelectionHandleBounds(unifiedBounds, zoom, selectedShapes.length === 1 && selectedShapes[0].type === 'text');
+      const handle = selectedShapes.every(s => !s.locked) && getHandleAtPoint(point, handleBounds, Math.max(HANDLE_SIZE, 7) / zoom);
       if (handle) {
         this.cursor?.setForHandle(handle);
         return;
